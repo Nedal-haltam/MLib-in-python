@@ -6,7 +6,7 @@ from sklearn.neighbors import KNeighborsRegressor
 import pathlib
 import urllib.request
 
-CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path
+CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path = pathlib.Path() / "resources" / "DefaultImagesFolder"
 def InitPlot(OutPutImagesFolderPath : pathlib.Path = pathlib.Path() / "DefaultImagesFolder") -> None:
     matplotlib.pyplot.rc('font', size=12)
     matplotlib.pyplot.rc('axes', labelsize=14, titlesize=14)
@@ -14,69 +14,63 @@ def InitPlot(OutPutImagesFolderPath : pathlib.Path = pathlib.Path() / "DefaultIm
     matplotlib.pyplot.rc('xtick', labelsize=10)
     matplotlib.pyplot.rc('ytick', labelsize=10)
     SetOutPutImagesFolderPath(OutPutImagesFolderPath)
-    return
+    return None
 
 def SetOutPutImagesFolderPath(OutPutImagesFolderPath : pathlib.Path) -> None:
     global CURRENT_OUTPUT_FOLDER_PATH
     CURRENT_OUTPUT_FOLDER_PATH = OutPutImagesFolderPath
     CURRENT_OUTPUT_FOLDER_PATH.mkdir(parents=True, exist_ok=True)
-    return
+    return None
 
 def SaveFig(FileName : str, tight_layout : bool =True, fig_extension : str ="png", DPIresolution : int =300) -> None:
     path = CURRENT_OUTPUT_FOLDER_PATH / f"{FileName}.{fig_extension}"
     if tight_layout:
         matplotlib.pyplot.tight_layout()
     matplotlib.pyplot.savefig(path, format=fig_extension, dpi=DPIresolution)
-    return
+    return None
 
 def SaveFigAndShow(FileName : str, tight_layout : bool =True, fig_extension : str ="png", DPIresolution : int =300) -> None:
     SaveFig(FileName, tight_layout, fig_extension, DPIresolution)
     matplotlib.pyplot.show()
-    return
+    return None
 
 def CSV2DataFrame(FilePath : str) -> pandas.DataFrame:
     return pandas.read_csv(FilePath)
 
-def RequestAndSaveCSVFromURL(URL, FolderPath : pathlib.Path, FileName : pathlib.Path) -> None:
+def RequestAndSaveCSVFromURL(URL, FolderPath : pathlib.Path, FileName : str) -> None:
     FolderPath.mkdir(parents=True, exist_ok=True)
     urllib.request.urlretrieve(URL, FolderPath / FileName)
-    return
+    return None
 
 def GetValuesFromDataFrameAsNumpyNdarray(DataFrame : pandas.DataFrame, Values : list) -> numpy.ndarray:
     return DataFrame[Values].to_numpy().reshape(-len(Values), len(Values))
 
+def LifeSatExample() -> None:
+    data_root = "https://github.com/ageron/data/raw/main/"
+    DFLifeSat = pandas.read_csv(data_root + "lifesat/lifesat.csv")
+    DFLifeSat.set_index("Country", inplace=True)
+    DFLifeSat.sort_values(by='Country', inplace=True)
+    # print(DFLifeSat.head())
+    GDPLabel : str = "GDP per capita (USD)"
+    LifeSatLabel : str = "Life satisfaction"
+    # you can do it like this
+    """
+    array = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [GDPLabel, LifeSatLabel])
+    X = array[:, 0].reshape(-1, 1)
+    y = array[:, 1].reshape(-1, 1)
+    """
+    # or like this
+    X = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [GDPLabel])
+    y = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [LifeSatLabel])
+    # Visualize the data
+    DFLifeSat.plot(kind='scatter', grid=True, x=GDPLabel, y=LifeSatLabel)
+    matplotlib.pyplot.axis([23_500, 62_500, 4, 9])
+    matplotlib.pyplot.show()
+    return None
 
-InitPlot(pathlib.Path() / "images")
-# Download and prepare the data
-LifeSatCSVPath = "https://github.com/ageron/data/raw/main/lifesat/lifesat.csv"
-DFLifeSat = CSV2DataFrame(LifeSatCSVPath)
-print(DFLifeSat)
-print('------------------------------------------------------------------------------------------------------------')
+InitPlot(pathlib.Path() / "resources" / "images")
 
-folderpath = pathlib.Path() / "dataset"
-filename = "lifesat.csv"
-RequestAndSaveCSVFromURL(LifeSatCSVPath, folderpath, filename)
-df = CSV2DataFrame(folderpath / filename)
-print(df)
-
-
-# GDPLabel : str = "GDP per capita (USD)"
-# LifeSatLabel : str = "Life satisfaction"
-# # you can do it like this
-# """
-# array = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [GDPLabel, LifeSatLabel])
-# X = array[:, 0].reshape(-1, 1)
-# y = array[:, 1].reshape(-1, 1)
-# """
-# # or like this
-# X = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [GDPLabel])
-# y = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [LifeSatLabel])
-
-# # Visualize the data
-# DFLifeSat.plot(kind='scatter', grid=True, x=GDPLabel, y=LifeSatLabel)
-# matplotlib.pyplot.axis([23_500, 62_500, 4, 9])
-# SaveFigAndShow("plot")
-
+# LifeSatExample()
 
 # model = LinearRegression()
 # model.fit(X, y)
