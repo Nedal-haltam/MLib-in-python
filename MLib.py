@@ -1,12 +1,28 @@
 import matplotlib.pyplot
 import pandas
 import numpy
+import sklearn
+import sklearn.impute
 from sklearn.linear_model import LinearRegression
+import sklearn.model_selection
 from sklearn.neighbors import KNeighborsRegressor
 import pathlib
 import urllib.request
+import urllib.request
+import copy
+import enum
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+import sklearn.preprocessing
 
-CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path = pathlib.Path() / "resources" / "DefaultImagesFolder"
+
+class CalculationType(enum.Enum):
+    Mean = enum.auto()
+    Median = enum.auto()
+    Mode = enum.auto()
+
+RESOURCES_FOLDER_PATH : pathlib.Path = pathlib.Path() / "resources"
+CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path = RESOURCES_FOLDER_PATH / "DefaultImagesFolder"
 def InitPlot(OutPutImagesFolderPath : pathlib.Path = pathlib.Path() / "DefaultImagesFolder") -> None:
     matplotlib.pyplot.rc('font', size=12)
     matplotlib.pyplot.rc('axes', labelsize=14, titlesize=14)
@@ -45,7 +61,7 @@ def RequestAndSaveCSVFromURL(URL, FolderPath : pathlib.Path, FileName : str) -> 
 def GetValuesFromDataFrameAsNumpyNdarray(DataFrame : pandas.DataFrame, Values : list) -> numpy.ndarray:
     return DataFrame[Values].to_numpy().reshape(-len(Values), len(Values))
 
-def LifeSatExample() -> None:
+# def LifeSatExample() -> None:
     data_root = "https://github.com/ageron/data/raw/main/"
     DFLifeSat = pandas.read_csv(data_root + "lifesat/lifesat.csv")
     DFLifeSat.set_index("Country", inplace=True)
@@ -68,10 +84,113 @@ def LifeSatExample() -> None:
     matplotlib.pyplot.show()
     return None
 
-InitPlot(pathlib.Path() / "resources" / "images")
+def shuffle_and_split_data(InputDataFrame : pandas.DataFrame, test_ratio : int) -> pandas.DataFrame:
+    shuffled_indices = numpy.random.permutation(len(InputDataFrame))
+    test_set_size = int(len(InputDataFrame) * test_ratio)
+    test_indices = shuffled_indices[:test_set_size]
+    train_indices = shuffled_indices[test_set_size:]
+    return InputDataFrame.iloc[train_indices], InputDataFrame.iloc[test_indices]
+
+def Separator() -> None:
+    print('-' * 150)
+    return None
+
+def DisplayDataFrameInfo(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
+    print(InputDataFrame.head())
+    Separator()
+    InputDataFrame.info()
+    Separator()
+    for col in InputDataFrame.columns:
+        if InputDataFrame[col].dtype == object:
+            # print("\t\t" , col)
+            print(InputDataFrame[col].value_counts())
+    Separator()    
+    print(InputDataFrame.describe().T)
+    Separator()
+    print(InputDataFrame.isnull().sum())
+    Separator()
+    # see correlation with the output
+    CorrelationMatrix = InputDataFrame.corr(numeric_only=True)
+    CorrelationMatrix[OutPutLabel].sort_values(ascending=False)
+
+    return None
+
+def VisualizeDataFrame(InputDataFrame : pandas.DataFrame) -> None:
+    # done or modified later using other tools katkpt
+    InputDataFrame.hist(bins=50, figsize=(12, 8))
+    SaveFig("histogram")
+    pandas.plotting.scatter_matrix(InputDataFrame, figsize=(12, 8))
+    SaveFig("scatter_matrix_plot")
+    return None
+
+def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, CalcType : CalculationType) -> None:
+
+    # see the following two lines before and after constructing some new features through combining current ones
+    # CorrelationMatrix = InputDataFrame.corr(numeric_only=True)
+    # CorrelationMatrix[OutPutLabel].sort_values(ascending=False)
+
+    # drop the output column
+    DFsamples = InputDataFrame.drop(OutPutLabel, axis=1)
+    DFlabels = InputDataFrame[OutPutLabel].copy(True)
+
+    # begin data cleaning
+    NullColumn = DFsamples.columns[DFsamples.isnull().any()].tolist()
+    NumericalColumns = DFsamples.select_dtypes(include=numpy.number).columns.tolist()
+    CatigoricalColumns = DFsamples.select_dtypes(exclude=numpy.number).columns.tolist()
+    num_pipeline = Pipeline([
+        ("impute", sklearn.impute.SimpleImputer(strategy=CalcType.__str__().split('.')[1].lower())),
+        ("standardize", sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))),
+        # ("standardize", sklearn.preprocessing.StandardScaler()),
+    ])
+    cat_pipeline = Pipeline([
+        ("impute", sklearn.impute.SimpleImputer(strategy="most_frequent")),
+        ("encode", sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown="ignore")),
+    ])
+    preprocessing = ColumnTransformer([
+        ("num", num_pipeline, NumericalColumns),
+        ("cat", cat_pipeline, CatigoricalColumns),
+    ])
+
+    # DFsamples_num = DFsamples.select_dtypes(include=[numpy.number])
+    # samples_num_prepared = num_pipeline.fit_transform(DFsamples_num)
+    # DFsamples_num_prepared = pandas.DataFrame(
+    # samples_num_prepared, columns=num_pipeline.get_feature_names_out(),
+    # index=DFsamples_num.index)
+
+    # DFsamples_cat = DFsamples.select_dtypes(exclude=[numpy.number])
+    # samples_cat_prepared = cat_pipeline.fit_transform(DFsamples_cat)
+    # DFsamples_cat_prepared = pandas.DataFrame(
+    # samples_cat_prepared, columns=cat_pipeline.get_feature_names_out(),
+    # index=DFsamples_cat.index)
+
+    ProcessedSamples = preprocessing.fit_transform(DFsamples)
+    DFsamplesFinal = pandas.DataFrame(
+    ProcessedSamples,
+    columns=preprocessing.get_feature_names_out(),
+    index=DFsamples.index)
+    print(DFsamplesFinal.head())
+    
+    # droping outliers
+    # from sklearn.ensemble import IsolationForest
+    # isolation_forest = IsolationForest(random_state=42)
+    # outlier_pred = isolation_forest.fit_predict(ImputerOutPut)
+    # DFsamples = DFsamples.iloc[outlier_pred == 1]
+    # DFlabels = DFlabels.iloc[outlier_pred == 1]
+
+
+
+
+    # train_set, test_set = sklearn.model_selection.train_test_split(DFHousing, test_size=0.2, random_state=42)
+    return None
+
+
+InitPlot(RESOURCES_FOLDER_PATH / "images")
+DFHousing = CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv")
+
+outputlabel = "median_house_value"
+PreProcessDataFrame(DFHousing, outputlabel, CalculationType.Mean)
 
 # LifeSatExample()
-
 # model = LinearRegression()
 # model.fit(X, y)
 # X_new = [[37_655.2]]  # Cyprus' GDP per capita in 2020
