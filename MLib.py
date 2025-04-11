@@ -123,6 +123,11 @@ def VisualizeDataFrame(InputDataFrame : pandas.DataFrame) -> None:
     SaveFig("scatter_matrix_plot")
     return None
 
+def ApplyPiplineOnDataFrame(pipeline : Pipeline, dataframe : pandas.DataFrame) -> pandas.DataFrame:
+    samples_num_prepared = pipeline.fit_transform(dataframe)
+    return pandas.DataFrame( samples_num_prepared, columns=pipeline.get_feature_names_out(), index=dataframe.index)
+
+
 def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, CalcType : CalculationType) -> None:
 
     # see the following two lines before and after constructing some new features through combining current ones
@@ -150,18 +155,8 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, Ca
         ("num", num_pipeline, NumericalColumns),
         ("cat", cat_pipeline, CatigoricalColumns),
     ])
-
-    # DFsamples_num = DFsamples.select_dtypes(include=[numpy.number])
-    # samples_num_prepared = num_pipeline.fit_transform(DFsamples_num)
-    # DFsamples_num_prepared = pandas.DataFrame(
-    # samples_num_prepared, columns=num_pipeline.get_feature_names_out(),
-    # index=DFsamples_num.index)
-
-    # DFsamples_cat = DFsamples.select_dtypes(exclude=[numpy.number])
-    # samples_cat_prepared = cat_pipeline.fit_transform(DFsamples_cat)
-    # DFsamples_cat_prepared = pandas.DataFrame(
-    # samples_cat_prepared, columns=cat_pipeline.get_feature_names_out(),
-    # index=DFsamples_cat.index)
+    # DFsamples_num_prepared = ApplyPiplineOnDataFrame(num_pipeline, DFsamples.select_dtypes(include=[numpy.number]))
+    # DFsamples_cat_prepared = ApplyPiplineOnDataFrame(cat_pipeline, DFsamples.select_dtypes(exclude=[numpy.number]))
 
     ProcessedSamples = preprocessing.fit_transform(DFsamples)
     DFsamplesFinal = pandas.DataFrame(
