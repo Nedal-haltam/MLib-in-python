@@ -2,8 +2,10 @@ import matplotlib.pyplot
 import pandas
 import numpy
 import sklearn
+import sklearn.compose
 import sklearn.impute
-from sklearn.linear_model import LinearRegression
+import sklearn.linear_model
+import sklearn.metrics
 import sklearn.model_selection
 from sklearn.neighbors import KNeighborsRegressor
 import pathlib
@@ -11,10 +13,10 @@ import urllib.request
 import urllib.request
 import copy
 import enum
-from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
+import sklearn.pipeline
 import sklearn.preprocessing
-
+import threading
 
 class CalculationType(enum.Enum):
     Mean = enum.auto()
@@ -123,7 +125,7 @@ def VisualizeDataFrame(InputDataFrame : pandas.DataFrame) -> None:
     SaveFig("scatter_matrix_plot")
     return None
 
-def ApplyPiplineOnDataFrame(pipeline : Pipeline, dataframe : pandas.DataFrame) -> pandas.DataFrame:
+def ApplyPiplineOnDataFrame(pipeline : sklearn.pipeline.Pipeline, dataframe : pandas.DataFrame) -> pandas.DataFrame:
     samples_num_prepared = pipeline.fit_transform(dataframe)
     return pandas.DataFrame( samples_num_prepared, columns=pipeline.get_feature_names_out(), index=dataframe.index)
 
@@ -137,34 +139,50 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, Ca
     # drop the output column
     DFsamples = InputDataFrame.drop(OutPutLabel, axis=1)
     DFlabels = InputDataFrame[OutPutLabel].copy(True)
-
     # begin data cleaning
-    NullColumn = DFsamples.columns[DFsamples.isnull().any()].tolist()
-    NumericalColumns = DFsamples.select_dtypes(include=numpy.number).columns.tolist()
-    CatigoricalColumns = DFsamples.select_dtypes(exclude=numpy.number).columns.tolist()
-    num_pipeline = Pipeline([
-        ("impute", sklearn.impute.SimpleImputer(strategy=CalcType.__str__().split('.')[1].lower())),
-        ("standardize", sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))),
-        # ("standardize", sklearn.preprocessing.StandardScaler()),
-    ])
-    cat_pipeline = Pipeline([
+    # sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))
+    ImputationStrategy : str = CalcType.__str__().split('.')[1].lower()
+    NumericalSelector = sklearn.compose.make_column_selector(dtype_include=numpy.number)
+    CatigoricalSelector = sklearn.compose.make_column_selector(dtype_include=object)
+    cat_pipeline = sklearn.pipeline.Pipeline([
         ("impute", sklearn.impute.SimpleImputer(strategy="most_frequent")),
         ("encode", sklearn.preprocessing.OneHotEncoder(sparse_output=False, handle_unknown="ignore")),
     ])
-    preprocessing = ColumnTransformer([
-        ("num", num_pipeline, NumericalColumns),
-        ("cat", cat_pipeline, CatigoricalColumns),
+    num_pipeline = sklearn.pipeline.Pipeline([
+        ("impute", sklearn.impute.SimpleImputer(strategy=ImputationStrategy)),
+        # ("standarize", sklearn.preprocessing.StandardScaler()),
+        ("standarize", sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))),
     ])
-    # DFsamples_num_prepared = ApplyPiplineOnDataFrame(num_pipeline, DFsamples.select_dtypes(include=[numpy.number]))
-    # DFsamples_cat_prepared = ApplyPiplineOnDataFrame(cat_pipeline, DFsamples.select_dtypes(exclude=[numpy.number]))
+    log_pipeline = sklearn.pipeline.Pipeline([
+        ("impute", sklearn.impute.SimpleImputer(strategy=ImputationStrategy)),
+        ("log", sklearn.preprocessing.FunctionTransformer(numpy.log, feature_names_out="one-to-one")),
+        # ("standarize", sklearn.preprocessing.StandardScaler()),
+        ("standarize", sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))),
+    ])
 
-    ProcessedSamples = preprocessing.fit_transform(DFsamples)
-    DFsamplesFinal = pandas.DataFrame(
-    ProcessedSamples,
-    columns=preprocessing.get_feature_names_out(),
-    index=DFsamples.index)
-    print(DFsamplesFinal.head())
+    LogColumns = ["total_bedrooms", "total_rooms", "population", "households", "median_income"]
+    preprocessing = ColumnTransformer([
+        ("log", log_pipeline, LogColumns),
+        ("num", num_pipeline, NumericalSelector),
+        ("cat", cat_pipeline, CatigoricalSelector),
+    ], remainder=num_pipeline)
     
+    # Linear Regressor
+    LinearRegressorPL = sklearn.pipeline.Pipeline([
+        ("PreProc", preprocessing),
+        ("LinearRegressor", sklearn.linear_model.LinearRegression()),
+    ])
+    LinearRegressorPL.fit(DFsamples, DFlabels)
+    DFsamplesPredictions = LinearRegressorPL.predict(DFsamples)
+    error = sklearn.metrics.root_mean_squared_error(DFlabels, DFsamplesPredictions)
+    print("Error of Linear Regressor : ", error)
+    LinearRegressorCV = -sklearn.model_selection.cross_val_score(LinearRegressorPL, DFsamples, DFlabels, scoring="neg_root_mean_squared_error", cv=10)
+    print(pandas.Series(LinearRegressorCV).describe())
+
+    # ProcessedSamples = preprocessing.fit_transform(DFsamples)
+    # DFsamplesFinal = pandas.DataFrame(ProcessedSamples, columns=preprocessing.get_feature_names_out(), index=DFsamples.index)
+    # print(DFsamplesFinal.describe().T)
+    # print(pandas.concat([DFsamplesFinal, DFlabels], axis=1).corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
     # droping outliers
     # from sklearn.ensemble import IsolationForest
     # isolation_forest = IsolationForest(random_state=42)
@@ -183,7 +201,7 @@ InitPlot(RESOURCES_FOLDER_PATH / "images")
 DFHousing = CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv")
 
 outputlabel = "median_house_value"
-PreProcessDataFrame(DFHousing, outputlabel, CalculationType.Mean)
+PreProcessDataFrame(DFHousing, outputlabel, CalculationType.Median)
 
 # LifeSatExample()
 # model = LinearRegression()
