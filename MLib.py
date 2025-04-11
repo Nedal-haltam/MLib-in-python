@@ -179,6 +179,19 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, Ca
     LinearRegressorCV = -sklearn.model_selection.cross_val_score(LinearRegressorPL, DFsamples, DFlabels, scoring="neg_root_mean_squared_error", cv=10)
     print(pandas.Series(LinearRegressorCV).describe())
 
+    # Decision Tree Regressor
+    DecisionTreeRegressorPL = sklearn.pipeline.Pipeline([
+        ("PreProc", preprocessing),
+        ("LinearRegressor", sklearn.tree.DecisionTreeRegressor(random_state=42)),
+    ])
+    DecisionTreeRegressorPL.fit(DFsamples, DFlabels)
+    DFsamplesPredictions = DecisionTreeRegressorPL.predict(DFsamples)
+    error = sklearn.metrics.root_mean_squared_error(DFlabels, DFsamplesPredictions)
+    print("Error of Decision Tree Regressor : ", error)    
+    DecisionTreeRegressorCV = -sklearn.model_selection.cross_val_score(DecisionTreeRegressorPL, DFsamples, DFlabels, scoring="neg_root_mean_squared_error", cv=10)
+    print(pandas.Series(DecisionTreeRegressorCV).describe())
+
+
     # ProcessedSamples = preprocessing.fit_transform(DFsamples)
     # DFsamplesFinal = pandas.DataFrame(ProcessedSamples, columns=preprocessing.get_feature_names_out(), index=DFsamples.index)
     # print(DFsamplesFinal.describe().T)
