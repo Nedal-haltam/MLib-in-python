@@ -242,8 +242,9 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # CorrelationMatrix[OutPutLabel].sort_values(ascending=False)
 
     # drop the output column
-    DFsamples = InputDataFrame.drop(OutPutLabel, axis=1)
-    DFlabels = InputDataFrame[OutPutLabel].copy(True)
+    TrainSet, TestSet = sklearn.model_selection.train_test_split(InputDataFrame, test_size=0.2, random_state=42)
+    DFsamples = TrainSet.drop(OutPutLabel, axis=1)
+    DFlabels = TrainSet[OutPutLabel].copy(True)
     # begin data cleaning
     # sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))
     ImputationStrategy : str = (CalculationType.enumMean).__str__().split('.')[1].lower().removeprefix('enum')
@@ -301,7 +302,7 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # ]
     # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForGridSearchCV, DFsamples, DFlabels)
     # print('Best set of parameters are : \n', GridSearch.best_params_)
-    # print('Best Estimator : \n', GridSearch.best_estimator_)
+    # print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
     # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
     # DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
     # DFGridSearchCV.head()
@@ -317,24 +318,27 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     ParametersDistribution = {'PreProc__geo__n_clusters': randint(low=3, high=50), 'randomforest__max_features': randint(low=2, high=20)}
     RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels)
     # print('Best set of parameters are : \n', RandomSearchCV.best_params_)
-    # print('Best Estimator : \n', RandomSearchCV.best_estimator_)
+    # print('Best Estimator : \n', RandomSearchCV.best_estimator_)  # includes preprocessing
     # DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
     # DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
     # DFRandomSearchCV.head()
 
-    FinalModel = RandomSearchCV.best_estimator_
+    FinalModel = RandomSearchCV.best_estimator_  # includes preprocessing
     FeatureImportance = FinalModel["randomforest"].feature_importances_.round(2)
-    print(FeatureImportance)
-    print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
-    # TrainSet, TestSet = sklearn.model_selection.train_test_split(DFHousing, test_size=0.2, random_state=42)
+    # print(FeatureImportance)
+    # print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
+    TestSetSamples = TestSet.drop(OutPutLabel, axis=1)
+    TestSetLabels = TestSet[OutPutLabel].copy()
+    FinalPredictions = FinalModel.predict(TestSetSamples)
+    FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
+    print(FinalError)
+
+
     return None
 
 
 InitPlot(RESOURCES_FOLDER_PATH / "images")
-DFHousing = CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv")
-
-outputlabel = "median_house_value"
-PreProcessDataFrame(DFHousing, outputlabel)
+PreProcessDataFrame(CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv"), "median_house_value")
 
 # LifeSatExample()
 # model = LinearRegression()
