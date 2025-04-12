@@ -2,7 +2,9 @@ import matplotlib.pyplot
 import pandas
 import numpy
 import sklearn
+import sklearn.cluster
 import sklearn.compose
+import sklearn.ensemble
 import sklearn.impute
 import sklearn.linear_model
 import sklearn.metrics
@@ -16,12 +18,20 @@ import enum
 from sklearn.compose import ColumnTransformer
 import sklearn.pipeline
 import sklearn.preprocessing
-import threading
+import joblib
+from sklearn.experimental import enable_halving_search_cv
+from sklearn.model_selection import HalvingRandomSearchCV
+from scipy.stats import randint
+
 
 class CalculationType(enum.Enum):
-    Mean = enum.auto()
-    Median = enum.auto()
-    Mode = enum.auto()
+    enumMean = enum.auto()
+    enumMedian = enum.auto()
+    enumMode = enum.auto()
+class MLALGORITHMTYPE(enum.Enum):
+    enumlinearregression = enum.auto()
+    enumdecisiontreeregression = enum.auto()
+    enumrandomforestregression = enum.auto()
 
 RESOURCES_FOLDER_PATH : pathlib.Path = pathlib.Path() / "resources"
 CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path = RESOURCES_FOLDER_PATH / "DefaultImagesFolder"
@@ -129,8 +139,103 @@ def ApplyPiplineOnDataFrame(pipeline : sklearn.pipeline.Pipeline, dataframe : pa
     samples_num_prepared = pipeline.fit_transform(dataframe)
     return pandas.DataFrame( samples_num_prepared, columns=pipeline.get_feature_names_out(), index=dataframe.index)
 
+def DumpModelInFile(Model, FilePath : pathlib.Path):
+    joblib.dump(Model, FilePath)
 
-def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, CalcType : CalculationType) -> None:
+def LoadModelFromFile(FilePath : pathlib.Path):
+    return joblib.load(FilePath)
+
+def DropingOutLiers_testtest():
+    # droping outliers
+    # from sklearn.ensemble import IsolationForest
+    # isolation_forest = IsolationForest(random_state=42)
+    # outlier_pred = isolation_forest.fit_predict(ImputerOutPut)
+    # DFsamples = DFsamples.iloc[outlier_pred == 1]
+    # DFlabels = DFlabels.iloc[outlier_pred == 1]
+    return
+
+def GetFullPipeLine(PreProcessing : ColumnTransformer, MLAlgorithmType : MLALGORITHMTYPE) -> sklearn.pipeline.Pipeline:
+    # TODO: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
+    if MLAlgorithmType == MLALGORITHMTYPE.linearregression:
+        return sklearn.pipeline.Pipeline([
+            ("PreProc", PreProcessing),
+            ("linear", sklearn.linear_model.LinearRegression()),
+        ])
+
+    if MLAlgorithmType == MLALGORITHMTYPE.decisiontreeregression:
+        return sklearn.pipeline.Pipeline([
+            ("PreProc", PreProcessing),
+            ("decisiontree", sklearn.tree.DecisionTreeRegressor(random_state=42)),
+        ])
+
+    if MLAlgorithmType == MLALGORITHMTYPE.randomforestregression:
+        return sklearn.pipeline.Pipeline([
+            ("PreProc", PreProcessing),
+            ("randomforest", sklearn.ensemble.RandomForestRegressor(random_state=42)),
+        ])
+        
+
+def MLAlgorithms(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> None:
+    # Linear Regressor
+    FullPipeLine = GetFullPipeLine(PreProcessing, MLALGORITHMTYPE.linearregression)
+    FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
+    DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
+    error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
+    print("Training Error of Linear Regressor : ", error)
+    LinearRegressorCV = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=10)
+    print("Validation Error statistics:\n", pandas.Series(LinearRegressorCV).describe())
+    #########################################################################################################################################################
+    # Decision Tree Regressor
+    FullPipeLine = GetFullPipeLine(PreProcessing, MLALGORITHMTYPE.decisiontreeregression)
+    FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
+    DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
+    error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
+    print("Training Error of Decision Tree Regressor : ", error)
+    DecisionTreeRegressorCV = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=10)
+    print("Validation Error statistics:\n", pandas.Series(DecisionTreeRegressorCV).describe())
+    #########################################################################################################################################################
+    # Random Forest Regressor
+    FullPipeLine = GetFullPipeLine(PreProcessing, MLALGORITHMTYPE.randomforestregression)
+    FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
+    DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
+    error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
+    print("Training Error of Random Forest Regressor : ", error)
+    RandomForestRegressorCV = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=10)
+    print("Validation Error statistics:\n", pandas.Series(RandomForestRegressorCV).describe())
+    #########################################################################################################################################################
+    return None
+
+class ClusterSimilarity(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
+    def __init__(self, n_clusters=10, gamma=1.0, random_state=None):
+        self.n_clusters = n_clusters
+        self.gamma = gamma
+        self.random_state = random_state
+
+    def fit(self, X, y=None, sample_weight=None):
+        self.kmeans_ = sklearn.cluster.KMeans(self.n_clusters, n_init=10,
+                              random_state=self.random_state)
+        self.kmeans_.fit(X, sample_weight=sample_weight)
+        return self  # always return self!
+
+    def transform(self, X):
+        return sklearn.metrics.pairwise.rbf_kernel(X, self.kmeans_.cluster_centers_, gamma=self.gamma)
+    
+    def get_feature_names_out(self, names=None):
+        return [f"Cluster {i} similarity" for i in range(self.n_clusters)]
+
+def ApplyColumnTransformerOnDataFrame(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame) -> pandas.DataFrame:
+    ProcessedSamples = PreProcessing.fit_transform(DataFrameSamples)
+    return pandas.DataFrame(ProcessedSamples, columns=PreProcessing.get_feature_names_out(), index=DataFrameSamples.index)
+
+def ApplyGridSearchCV(PipeLine : ColumnTransformer, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> sklearn.model_selection.GridSearchCV:
+    GridSearch = sklearn.model_selection.GridSearchCV(PipeLine, Parameters, cv=3, scoring='neg_root_mean_squared_error')
+    return GridSearch.fit(DataFrameSamples, DataFrameLabels)
+
+def ApplyRandomSearchCV(PipeLine : ColumnTransformer, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> sklearn.model_selection.RandomizedSearchCV:
+    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=10, cv=3, scoring='neg_root_mean_squared_error', random_state=42)
+    return RandomSearchCV.fit(DataFrameSamples, DataFrameLabels)
+
+def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
 
     # see the following two lines before and after constructing some new features through combining current ones
     # CorrelationMatrix = InputDataFrame.corr(numeric_only=True)
@@ -141,7 +246,7 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, Ca
     DFlabels = InputDataFrame[OutPutLabel].copy(True)
     # begin data cleaning
     # sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))
-    ImputationStrategy : str = CalcType.__str__().split('.')[1].lower()
+    ImputationStrategy : str = (CalculationType.enumMean).__str__().split('.')[1].lower().removeprefix('enum')
     NumericalSelector = sklearn.compose.make_column_selector(dtype_include=numpy.number)
     CatigoricalSelector = sklearn.compose.make_column_selector(dtype_include=object)
     cat_pipeline = sklearn.pipeline.Pipeline([
@@ -159,65 +264,69 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str, Ca
         # ("standarize", sklearn.preprocessing.StandardScaler()),
         ("standarize", sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))),
     ])
-
+    # ClusterSimilarity_pipeline = sklearn.pipeline.Pipeline([
+    #     ('clustering', ClusterSimilarity(n_clusters=10, gamma=1., random_state=42))
+    # ])
+    ClusterSimilarity_pipeline = ClusterSimilarity(n_clusters=10, gamma=1., random_state=42)
+    # DropingOutLiers_testtest()
+    # keep in mind that you should try all pipelines on all columns to you can shoose the best features that correlates with the output
     LogColumns = ["total_bedrooms", "total_rooms", "population", "households", "median_income"]
+    # TODO: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
     preprocessing = ColumnTransformer([
         ("log", log_pipeline, LogColumns),
-        ("num", num_pipeline, NumericalSelector),
+        ("geo", ClusterSimilarity_pipeline, ['longitude', 'latitude']),
         ("cat", cat_pipeline, CatigoricalSelector),
     ], remainder=num_pipeline)
-    
-    # Linear Regressor
-    LinearRegressorPL = sklearn.pipeline.Pipeline([
-        ("PreProc", preprocessing),
-        ("LinearRegressor", sklearn.linear_model.LinearRegression()),
-    ])
-    LinearRegressorPL.fit(DFsamples, DFlabels)
-    DFsamplesPredictions = LinearRegressorPL.predict(DFsamples)
-    error = sklearn.metrics.root_mean_squared_error(DFlabels, DFsamplesPredictions)
-    print("Error of Linear Regressor : ", error)
-    LinearRegressorCV = -sklearn.model_selection.cross_val_score(LinearRegressorPL, DFsamples, DFlabels, scoring="neg_root_mean_squared_error", cv=10)
-    print(pandas.Series(LinearRegressorCV).describe())
-
-    # Decision Tree Regressor
-    DecisionTreeRegressorPL = sklearn.pipeline.Pipeline([
-        ("PreProc", preprocessing),
-        ("LinearRegressor", sklearn.tree.DecisionTreeRegressor(random_state=42)),
-    ])
-    DecisionTreeRegressorPL.fit(DFsamples, DFlabels)
-    DFsamplesPredictions = DecisionTreeRegressorPL.predict(DFsamples)
-    error = sklearn.metrics.root_mean_squared_error(DFlabels, DFsamplesPredictions)
-    print("Error of Decision Tree Regressor : ", error)    
-    DecisionTreeRegressorCV = -sklearn.model_selection.cross_val_score(DecisionTreeRegressorPL, DFsamples, DFlabels, scoring="neg_root_mean_squared_error", cv=10)
-    print(pandas.Series(DecisionTreeRegressorCV).describe())
-
-    # Random Forest Regressor
-    RandomForestRegressorPL = sklearn.pipeline.Pipeline([
-        ("PreProc", preprocessing),
-        ("LinearRegressor", sklearn.ensemble.RandomForestRegressor(random_state=42)),
-    ])
-    RandomForestRegressorPL.fit(DFsamples, DFlabels)
-    DFsamplesPredictions = RandomForestRegressorPL.predict(DFsamples)
-    error = sklearn.metrics.root_mean_squared_error(DFlabels, DFsamplesPredictions)
-    print("Error of Random Forest Regressor : ", error)
-    RandomForestRegressorCV = -sklearn.model_selection.cross_val_score(RandomForestRegressorPL, DFsamples, DFlabels, scoring="neg_root_mean_squared_error", cv=10)
-    print(pandas.Series(RandomForestRegressorCV).describe())
-
-    # ProcessedSamples = preprocessing.fit_transform(DFsamples)
-    # DFsamplesFinal = pandas.DataFrame(ProcessedSamples, columns=preprocessing.get_feature_names_out(), index=DFsamples.index)
+    DFsamplesFinal = ApplyColumnTransformerOnDataFrame(preprocessing, DFsamples)
     # print(DFsamplesFinal.describe().T)
     # print(pandas.concat([DFsamplesFinal, DFlabels], axis=1).corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
-    # droping outliers
-    # from sklearn.ensemble import IsolationForest
-    # isolation_forest = IsolationForest(random_state=42)
-    # outlier_pred = isolation_forest.fit_predict(ImputerOutPut)
-    # DFsamples = DFsamples.iloc[outlier_pred == 1]
-    # DFlabels = DFlabels.iloc[outlier_pred == 1]
+    # MLAlgorithms(DFsamplesFinal, DFlabels)
+    # ParametersFormat = 
+    # [
+    #     {
+    #         'parameter': ["""list of possible values"""],
+    #         'parameter': ["""list of possible values"""],
+    #     },
+    #     {
+    #         'parameter': ["""list of possible values"""],
+    #         'parameter': ["""list of possible values"""],
+    #     },
+    # ]
+    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.randomforestregression)
+    # ParametersForGridSearchCV = [
+    #     {'PreProc__geo__n_clusters': [5, 8, 10],
+    #     'randomforest__max_features': [4, 6, 8]},
+    #     {'PreProc__geo__n_clusters': [10, 15],
+    #     'randomforest__max_features': [6, 8, 10]},
+    # ]
+    # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForGridSearchCV, DFsamples, DFlabels)
+    # print('Best set of parameters are : \n', GridSearch.best_params_)
+    # print('Best Estimator : \n', GridSearch.best_estimator_)
+    # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
+    # DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    # DFGridSearchCV.head()
+    """
+    how to choose the sampling distribution for a hyperparameter
 
+    `scipy.stats.randint(a, b+1)`: for hyperparameters with _discrete_ values that range from a to b, and all values in that range seem equally likely.
+    `scipy.stats.uniform(a, b)`: this is very similar, but for _continuous_ hyperparameters.
+    `scipy.stats.geom(1 / scale)`: for discrete values, when you want to sample roughly in a given scale. E.g., with scale=1000 most samples will be in this ballpark, but ~10% of all samples will be <100 and ~10% will be >2300.
+    `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
+    `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
+    """
+    ParametersDistribution = {'PreProc__geo__n_clusters': randint(low=3, high=50), 'randomforest__max_features': randint(low=2, high=20)}
+    RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels)
+    # print('Best set of parameters are : \n', RandomSearchCV.best_params_)
+    # print('Best Estimator : \n', RandomSearchCV.best_estimator_)
+    # DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
+    # DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    # DFRandomSearchCV.head()
 
-
-
-    # train_set, test_set = sklearn.model_selection.train_test_split(DFHousing, test_size=0.2, random_state=42)
+    FinalModel = RandomSearchCV.best_estimator_
+    FeatureImportance = FinalModel["randomforest"].feature_importances_.round(2)
+    print(FeatureImportance)
+    print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
+    # TrainSet, TestSet = sklearn.model_selection.train_test_split(DFHousing, test_size=0.2, random_state=42)
     return None
 
 
@@ -225,7 +334,7 @@ InitPlot(RESOURCES_FOLDER_PATH / "images")
 DFHousing = CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv")
 
 outputlabel = "median_house_value"
-PreProcessDataFrame(DFHousing, outputlabel, CalculationType.Median)
+PreProcessDataFrame(DFHousing, outputlabel)
 
 # LifeSatExample()
 # model = LinearRegression()
