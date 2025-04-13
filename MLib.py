@@ -182,34 +182,15 @@ def GetFullPipeLine(PreProcessing : ColumnTransformer, MLAlgorithmType : MLALGOR
             ("svr", sklearn.svm.SVR()),
         ])        
 
-def MLAlgorithms(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> None:
-    # Linear Regressor
-    FullPipeLine = GetFullPipeLine(PreProcessing, MLALGORITHMTYPE.enumlinearregression)
+def MLAlgorithmsOnNormalCV(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, MLAlgorithmType : MLALGORITHMTYPE) -> None:
+    cv = 3
+    FullPipeLine = GetFullPipeLine(PreProcessing, MLAlgorithmType)
     FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
     DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
     error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
-    print("Training Error of Linear Regressor : ", error)
-    LinearRegressorCV = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=10)
-    print("Validation Error statistics:\n", pandas.Series(LinearRegressorCV).describe())
-    #########################################################################################################################################################
-    # Decision Tree Regressor
-    FullPipeLine = GetFullPipeLine(PreProcessing, MLALGORITHMTYPE.enumdecisiontreeregression)
-    FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
-    DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
-    error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
-    print("Training Error of Decision Tree Regressor : ", error)
-    DecisionTreeRegressorCV = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=10)
-    print("Validation Error statistics:\n", pandas.Series(DecisionTreeRegressorCV).describe())
-    #########################################################################################################################################################
-    # Random Forest Regressor
-    FullPipeLine = GetFullPipeLine(PreProcessing, MLALGORITHMTYPE.enumrandomforestregression)
-    FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
-    DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
-    error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
-    print("Training Error of Random Forest Regressor : ", error)
-    RandomForestRegressorCV = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=10)
-    print("Validation Error statistics:\n", pandas.Series(RandomForestRegressorCV).describe())
-    #########################################################################################################################################################
+    print(f"Training Error of `{MLAlgorithmType.__str__().split('.')[1].lower().removeprefix('enum')}` : ", error)
+    CVresult = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=cv)
+    print("Cross Validation statistics:\n", pandas.Series(CVresult).describe())
     return None
 
 class ClusterSimilarity(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
@@ -234,28 +215,24 @@ def ApplyColumnTransformerOnDataFrame(PreProcessing : ColumnTransformer, DataFra
     ProcessedSamples = PreProcessing.fit_transform(DataFrameSamples)
     return pandas.DataFrame(ProcessedSamples, columns=PreProcessing.get_feature_names_out(), index=DataFrameSamples.index)
 
-def ApplyGridSearchCV(PipeLine, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> sklearn.model_selection.GridSearchCV:
-    GridSearch = sklearn.model_selection.GridSearchCV(PipeLine, Parameters, cv=3, scoring='neg_root_mean_squared_error')
+def ApplyGridSearchCV(PipeLine, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, CVFolds : int) -> sklearn.model_selection.GridSearchCV:
+    GridSearch = sklearn.model_selection.GridSearchCV(PipeLine, Parameters, cv=CVFolds, scoring='neg_root_mean_squared_error')
     return GridSearch.fit(DataFrameSamples, DataFrameLabels)
 
-def ApplyRandomSearchCV(PipeLine, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int) -> sklearn.model_selection.RandomizedSearchCV:
-    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=3, scoring='neg_root_mean_squared_error', random_state=42)
+def ApplyRandomSearchCV(PipeLine, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int, CVFolds : int) -> sklearn.model_selection.RandomizedSearchCV:
+    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=CVFolds, scoring='neg_root_mean_squared_error', random_state=42)
     return RandomSearchCV.fit(DataFrameSamples, DataFrameLabels)
 
 def RandomForestGridSearchAndRandomizedSearchCVs(preprocessing : ColumnTransformer, DFsamples : pandas.DataFrame, DFlabels : pandas.DataFrame, TestSet : pandas.DataFrame, OutPutLabel : str):
-    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumrandomforestregression)
+    # FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumrandomforestregression)
     # ParametersForRandomForest = [
     #     {'PreProc__geo__n_clusters': [5, 8, 10],
     #     'randomforest__max_features': [4, 6, 8]},
     #     {'PreProc__geo__n_clusters': [10, 15],
     #     'randomforest__max_features': [6, 8, 10]},
     # ]
-    # GridSearch = ApplyGridSearchCV(FullPipeLine, Parameters, DFsamples, DFlabels)
-    # print('Best set of parameters are : \n', GridSearch.best_params_)
-    # print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
-    # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
-    # DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    # DFGridSearchCV.head()
+    # GridSearchCV = ApplyGridSearchCV(FullPipeLine, ParametersForRandomForest, DFsamples, DFlabels)
+    # DisplayCVInformation(GridSearchCV)
     #########################################################################################################################################################
     """
     how to choose the sampling distribution for a hyperparameter
@@ -265,29 +242,32 @@ def RandomForestGridSearchAndRandomizedSearchCVs(preprocessing : ColumnTransform
     `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
     `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
     """
-    ParametersDistribution = {'PreProc__geo__n_clusters': scipy.stats.randint(low=3, high=50), 'randomforest__max_features': scipy.stats.randint(low=2, high=20)}
-    RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels, 1)
-    print('Best set of parameters are : \n', RandomSearchCV.best_params_)
-    print('Best Estimator : \n', RandomSearchCV.best_estimator_)  # includes preprocessing
-    DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
-    DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    DFRandomSearchCV.head()
+    # ParametersDistribution = {'PreProc__geo__n_clusters': scipy.stats.randint(low=3, high=50), 'randomforest__max_features': scipy.stats.randint(low=2, high=20)}
+    # RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels, 1, 1)
+    # DisplayCVInformation(RandomSearchCV)
     #########################################################################################################################################################
-
-    #########################################################################################################################################################
-    # FinalModel : sklearn.pipeline.Pipeline = (CrossValidationObject).best_estimator_  # includes preprocessing
+    # Test_BestEstimator_On_A_Set((CrossValidationObject).best_estimator_)
     # FMrf : sklearn.ensemble.RandomForestRegressor = FinalModel["randomforest"]
     # FeatureImportance = FMrf.feature_importances_.round(2)
     # print(FeatureImportance)
     # print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
-    # TestSetSamples = TestSet.drop(OutPutLabel, axis=1)
-    # TestSetLabels = TestSet[OutPutLabel].copy()
-    # FinalPredictions = FinalModel.predict(TestSetSamples)
-    # FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
-    # print(FinalError)
+
+def GetError_On_A_Set(Model : sklearn.pipeline.Pipeline, Set : pandas.DataFrame, OutPutLabel : str):
+    SetSamples = Set.drop(OutPutLabel, axis=1)
+    SetLabels = Set[OutPutLabel].copy()
+    FinalPredictions = Model.predict(SetSamples)
+    return sklearn.metrics.root_mean_squared_error(SetLabels, FinalPredictions)
 
 def DisplayFeaturesAndOutPutCorrelation(samples, labels, OutPutLabel):
     print(pandas.concat([samples, labels], axis=1).corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
+
+def DisplayCVInformation(CrossValidator):
+    print(f'Best Score (Error) : {-CrossValidator.best_score_}')
+    print('Best set of parameters are : \n', CrossValidator.best_params_)
+    SVR_DFRandomSearchCV = pandas.DataFrame(CrossValidator.cv_results_)
+    SVR_DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    print(SVR_DFRandomSearchCV.head())
+
 
 def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
 
@@ -298,9 +278,11 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # drop the output column
     TrainSet, TestSet = sklearn.model_selection.train_test_split(InputDataFrame, test_size=0.2, random_state=42)
     TrainSet : pandas.DataFrame
+    TrainSetsamples : pandas.DataFrame = TrainSet.drop(OutPutLabel, axis=1)
+    TrainSetlabels : pandas.DataFrame = TrainSet[OutPutLabel].copy(True)
     TestSet : pandas.DataFrame
-    DFsamples : pandas.DataFrame = TrainSet.drop(OutPutLabel, axis=1)
-    DFlabels : pandas.DataFrame = TrainSet[OutPutLabel].copy(True)
+    TestSetsamples : pandas.DataFrame = TestSet.drop(OutPutLabel, axis=1)
+    TestSetlabels : pandas.DataFrame = TestSet[OutPutLabel].copy(True)
     # begin data cleaning
     # sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))
     ImputationStrategy : str = (CalculationType.enumMean).__str__().split('.')[1].lower().removeprefix('enum')
@@ -334,9 +316,8 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
         ("geo", ClusterSimilarity_pipeline, ['longitude', 'latitude']),
         ("cat", cat_pipeline, CatigoricalSelector),
     ], remainder=num_pipeline)
-    # DFsamplesFinal = ApplyColumnTransformerOnDataFrame(preprocessing, DFsamples)
-    # DisplayFeaturesAndOutPutCorrelation(DFsamplesFinal, DFlabels, OutPutLabel)
-    # MLAlgorithms(DFsamplesFinal, DFlabels)
+    # MLAlgorithmsOnNormalCV(preprocessing, TrainSetsamples, TrainSetlabels, MLALGORITHMTYPE.enumsvr)
+    # exit()
     # ParametersFormat = 
     # [
     #     {
@@ -348,7 +329,8 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     #         'parameter': ["""list of possible values"""],
     #     },
     # ]
-    # RandomForestGridSearchAndRandomizedSearchCVs(preprocessing, DFsamples, DFlabels, TestSet, OutPutLabel)
+    # RandomForestGridSearchAndRandomizedSearchCVs(preprocessing, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
+
     # ParametersForSVR = [
     #     {
     #         'svr__kernel': ['linear'], 
@@ -360,24 +342,22 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     #         'svr__gamma': [0.01, 0.03, 0.1, 0.3, 1.0, 3.0],
     #     },
     # ]
-    # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForSVR, DFsamples, DFlabels)
-    # print('Best set of parameters are : \n', GridSearch.best_params_)
-    # print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
-    # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
-    # DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    # DFGridSearchCV.head()
-    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumsvr)
+    # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForSVR, TrainSetsamples, TrainSetlabels)
+
     ParametersDistributionForSVR = {
         'svr__kernel': ['linear', 'rbf'],
         'svr__C': scipy.stats.loguniform(20, 200_000),
         'svr__gamma': scipy.stats.expon(scale=1.0),
     }
-    SVR_RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistributionForSVR, DFsamples, DFlabels, 1)
-    # FinalModel : sklearn.pipeline.Pipeline = SVR_RandomSearchCV.best_estimator_  # includes preprocessing
-    print('finished random search')
+    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumsvr)
+    SVR_RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistributionForSVR, TrainSetsamples, TrainSetlabels, 15, 2)
+    # DisplayCVInformation(SVR_RandomSearchCV)
+    # error = GetError_On_A_Set(SVR_RandomSearchCV.best_estimator_, TestSet, OutPutLabel)
+    # print(f'error is : {error}')
+
     SelectorPipeLine = sklearn.pipeline.Pipeline([
         ('preprocessing', preprocessing),
-        ('selector', sklearn.feature_selection.SelectFromModel(sklearn.ensemble.RandomForestRegressor(random_state=42), threshold=0.005)),  # min feature importance
+        ('selector', sklearn.feature_selection.SelectFromModel(sklearn.ensemble.RandomForestRegressor(random_state=42))),  # min feature importance
         ('svr', sklearn.svm.SVR(C=SVR_RandomSearchCV.best_params_["svr__C"], gamma=SVR_RandomSearchCV.best_params_["svr__gamma"], kernel=SVR_RandomSearchCV.best_params_["svr__kernel"])),
     ])
     parameters = [
@@ -385,31 +365,10 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
             'selector__threshold': [x / 1000 for x in range(5, 10)]
         }
     ]
-    GridSearch = ApplyGridSearchCV(SelectorPipeLine, parameters, DFsamples, DFlabels)
-    print('finished selector grid search')
-    print('Best set of parameters are : \n', GridSearch.best_params_)
-    print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
-    DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
-    DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    DFGridSearchCV.head()
-
-    # Randomized Search CV related informations
-    # print('Best set of parameters are : \n', SVR_RandomSearchCV.best_params_)
-    # print('Best Estimator : \n', SVR_RandomSearchCV.best_estimator_)  # includes preprocessing
-    # SVR_DFRandomSearchCV = pandas.DataFrame(SVR_RandomSearchCV.cv_results_)
-    # SVR_DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    # SVR_DFRandomSearchCV.head()
-
-    # Final Model Related statistics and testing it
-    # FMrf : sklearn.ensemble.RandomForestRegressor = FinalModel["randomforest"]
-    # FeatureImportance = FMrf.feature_importances_.round(2)
-    # print(FeatureImportance)
-    # print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
-    # TestSetSamples = TestSet.drop(OutPutLabel, axis=1)
-    # TestSetLabels = TestSet[OutPutLabel].copy()
-    # FinalPredictions = FinalModel.predict(TestSetSamples)
-    # FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
-    # print(FinalError)
+    GridSearch = ApplyGridSearchCV(SelectorPipeLine, parameters, TrainSetsamples, TrainSetlabels, 2)
+    DisplayCVInformation(GridSearch)
+    error = GetError_On_A_Set(GridSearch.best_estimator_, TestSet, OutPutLabel)
+    print(f'error of selector pipeline is {error}')
 
     return None
 
