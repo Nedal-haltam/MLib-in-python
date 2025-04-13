@@ -316,21 +316,8 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
         ("geo", ClusterSimilarity_pipeline, ['longitude', 'latitude']),
         ("cat", cat_pipeline, CatigoricalSelector),
     ], remainder=num_pipeline)
-    # MLAlgorithmsOnNormalCV(preprocessing, TrainSetsamples, TrainSetlabels, MLALGORITHMTYPE.enumsvr)
-    # exit()
-    # ParametersFormat = 
-    # [
-    #     {
-    #         'parameter': ["""list of possible values"""],
-    #         'parameter': ["""list of possible values"""],
-    #     },
-    #     {
-    #         'parameter': ["""list of possible values"""],
-    #         'parameter': ["""list of possible values"""],
-    #     },
-    # ]
     # RandomForestGridSearchAndRandomizedSearchCVs(preprocessing, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
-
+    # a paramter is a list of dicts each consists of bunch of these ('parameter': ["""list of possible values"""], `the other one`)
     # ParametersForSVR = [
     #     {
     #         'svr__kernel': ['linear'], 
@@ -344,32 +331,19 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # ]
     # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForSVR, TrainSetsamples, TrainSetlabels)
 
+    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumsvr)
     ParametersDistributionForSVR = {
         'svr__kernel': ['linear', 'rbf'],
         'svr__C': scipy.stats.loguniform(20, 200_000),
         'svr__gamma': scipy.stats.expon(scale=1.0),
     }
-    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumsvr)
     SVR_RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistributionForSVR, TrainSetsamples, TrainSetlabels, 15, 2)
-    # DisplayCVInformation(SVR_RandomSearchCV)
-    # error = GetError_On_A_Set(SVR_RandomSearchCV.best_estimator_, TestSet, OutPutLabel)
-    # print(f'error is : {error}')
-
+    # you can do a grid/random search on the `threshold` parameter for example and so on...
     SelectorPipeLine = sklearn.pipeline.Pipeline([
         ('preprocessing', preprocessing),
-        ('selector', sklearn.feature_selection.SelectFromModel(sklearn.ensemble.RandomForestRegressor(random_state=42))),  # min feature importance
+        ('selector', sklearn.feature_selection.SelectFromModel(sklearn.ensemble.RandomForestRegressor(random_state=42), threshold=0.005)),  # min feature importance
         ('svr', sklearn.svm.SVR(C=SVR_RandomSearchCV.best_params_["svr__C"], gamma=SVR_RandomSearchCV.best_params_["svr__gamma"], kernel=SVR_RandomSearchCV.best_params_["svr__kernel"])),
     ])
-    parameters = [
-        {
-            'selector__threshold': [x / 1000 for x in range(5, 10)]
-        }
-    ]
-    GridSearch = ApplyGridSearchCV(SelectorPipeLine, parameters, TrainSetsamples, TrainSetlabels, 2)
-    DisplayCVInformation(GridSearch)
-    error = GetError_On_A_Set(GridSearch.best_estimator_, TestSet, OutPutLabel)
-    print(f'error of selector pipeline is {error}')
-
     return None
 
 
