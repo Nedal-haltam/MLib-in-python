@@ -22,6 +22,7 @@ import joblib
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
 from scipy.stats import randint
+import sklearn.svm
 
 
 class CalculationType(enum.Enum):
@@ -32,6 +33,7 @@ class MLALGORITHMTYPE(enum.Enum):
     enumlinearregression = enum.auto()
     enumdecisiontreeregression = enum.auto()
     enumrandomforestregression = enum.auto()
+    enumsvr = enum.auto()
 
 RESOURCES_FOLDER_PATH : pathlib.Path = pathlib.Path() / "resources"
 CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path = RESOURCES_FOLDER_PATH / "DefaultImagesFolder"
@@ -161,19 +163,21 @@ def GetFullPipeLine(PreProcessing : ColumnTransformer, MLAlgorithmType : MLALGOR
             ("PreProc", PreProcessing),
             ("linear", sklearn.linear_model.LinearRegression()),
         ])
-
     if MLAlgorithmType == MLALGORITHMTYPE.decisiontreeregression:
         return sklearn.pipeline.Pipeline([
             ("PreProc", PreProcessing),
             ("decisiontree", sklearn.tree.DecisionTreeRegressor(random_state=42)),
         ])
-
     if MLAlgorithmType == MLALGORITHMTYPE.randomforestregression:
         return sklearn.pipeline.Pipeline([
             ("PreProc", PreProcessing),
             ("randomforest", sklearn.ensemble.RandomForestRegressor(random_state=42)),
         ])
-        
+    if MLAlgorithmType == MLALGORITHMTYPE.enumsvr:
+        return sklearn.pipeline.Pipeline([
+            ("PreProc", PreProcessing),
+            ("svr", sklearn.svm.SVR()),
+        ])        
 
 def MLAlgorithms(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> None:
     # Linear Regressor
@@ -278,10 +282,12 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
         ("geo", ClusterSimilarity_pipeline, ['longitude', 'latitude']),
         ("cat", cat_pipeline, CatigoricalSelector),
     ], remainder=num_pipeline)
-    DFsamplesFinal = ApplyColumnTransformerOnDataFrame(preprocessing, DFsamples)
+    # DFsamplesFinal = ApplyColumnTransformerOnDataFrame(preprocessing, DFsamples)
     # print(DFsamplesFinal.describe().T)
     # print(pandas.concat([DFsamplesFinal, DFlabels], axis=1).corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
     # MLAlgorithms(DFsamplesFinal, DFlabels)
+
+
     # ParametersFormat = 
     # [
     #     {
@@ -294,13 +300,13 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     #     },
     # ]
     FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.randomforestregression)
-    # ParametersForGridSearchCV = [
+    # ParametersForRandomForest = [
     #     {'PreProc__geo__n_clusters': [5, 8, 10],
     #     'randomforest__max_features': [4, 6, 8]},
     #     {'PreProc__geo__n_clusters': [10, 15],
     #     'randomforest__max_features': [6, 8, 10]},
     # ]
-    # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForGridSearchCV, DFsamples, DFlabels)
+    # GridSearch = ApplyGridSearchCV(FullPipeLine, Parameters, DFsamples, DFlabels)
     # print('Best set of parameters are : \n', GridSearch.best_params_)
     # print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
     # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
@@ -322,7 +328,6 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
     # DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
     # DFRandomSearchCV.head()
-
     FinalModel = RandomSearchCV.best_estimator_  # includes preprocessing
     FeatureImportance = FinalModel["randomforest"].feature_importances_.round(2)
     # print(FeatureImportance)
@@ -333,6 +338,24 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
     print(FinalError)
 
+    ParametersForSVR = [
+        {
+            'svr__kernel': ['linear'], 
+            'svr__C': [10., 30., 100., 300., 1000., 3000., 10000., 30000.0],
+        },
+        {
+            'svr__kernel': ['rbf'], 
+            'svr__C': [1.0, 3.0, 10., 30., 100., 300., 1000.0], 
+            'svr__gamma': [0.01, 0.03, 0.1, 0.3, 1.0, 3.0],
+        },
+    ]
+    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumsvr)
+    GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForSVR, DFsamples, DFlabels)
+    print('Best set of parameters are : \n', GridSearch.best_params_)
+    print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
+    DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
+    DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    DFGridSearchCV.head()
 
     return None
 
