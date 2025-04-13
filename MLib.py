@@ -1,6 +1,7 @@
 import matplotlib.pyplot
 import pandas
 import numpy
+import scipy.stats
 import sklearn
 import sklearn.cluster
 import sklearn.compose
@@ -21,7 +22,7 @@ import sklearn.preprocessing
 import joblib
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
-from scipy.stats import randint
+import scipy
 import sklearn.svm
 
 
@@ -235,9 +236,51 @@ def ApplyGridSearchCV(PipeLine : ColumnTransformer, Parameters, DataFrameSamples
     GridSearch = sklearn.model_selection.GridSearchCV(PipeLine, Parameters, cv=3, scoring='neg_root_mean_squared_error')
     return GridSearch.fit(DataFrameSamples, DataFrameLabels)
 
-def ApplyRandomSearchCV(PipeLine : ColumnTransformer, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame) -> sklearn.model_selection.RandomizedSearchCV:
-    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=10, cv=3, scoring='neg_root_mean_squared_error', random_state=42)
+def ApplyRandomSearchCV(PipeLine : ColumnTransformer, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int) -> sklearn.model_selection.RandomizedSearchCV:
+    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=3, scoring='neg_root_mean_squared_error', random_state=42)
     return RandomSearchCV.fit(DataFrameSamples, DataFrameLabels)
+
+def RandomForestGridSearchAndRandomizedSearchCVs(preprocessing : ColumnTransformer, DFsamples : pandas.DataFrame, DFlabels : pandas.DataFrame, TestSet : pandas.DataFrame, OutPutLabel : str):
+    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.randomforestregression)
+    # ParametersForRandomForest = [
+    #     {'PreProc__geo__n_clusters': [5, 8, 10],
+    #     'randomforest__max_features': [4, 6, 8]},
+    #     {'PreProc__geo__n_clusters': [10, 15],
+    #     'randomforest__max_features': [6, 8, 10]},
+    # ]
+    # GridSearch = ApplyGridSearchCV(FullPipeLine, Parameters, DFsamples, DFlabels)
+    # print('Best set of parameters are : \n', GridSearch.best_params_)
+    # print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
+    # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
+    # DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    # DFGridSearchCV.head()
+    """
+    how to choose the sampling distribution for a hyperparameter
+
+    `scipy.stats.randint(a, b+1)`: for hyperparameters with _discrete_ values that range from a to b, and all values in that range seem equally likely.
+    `scipy.stats.uniform(a, b)`: this is very similar, but for _continuous_ hyperparameters.
+    `scipy.stats.geom(1 / scale)`: for discrete values, when you want to sample roughly in a given scale. E.g., with scale=1000 most samples will be in this ballpark, but ~10% of all samples will be <100 and ~10% will be >2300.
+    `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
+    `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
+    """
+    ParametersDistribution = {'PreProc__geo__n_clusters': scipy.stats.randint(low=3, high=50), 'randomforest__max_features': scipy.stats.randint(low=2, high=20)}
+    RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels, 10)
+    # print('Best set of parameters are : \n', RandomSearchCV.best_params_)
+    # print('Best Estimator : \n', RandomSearchCV.best_estimator_)  # includes preprocessing
+    # DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
+    # DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    # DFRandomSearchCV.head()
+    FinalModel : sklearn.pipeline.Pipeline = RandomSearchCV.best_estimator_  # includes preprocessing
+    # FMrf : sklearn.ensemble.RandomForestRegressor = FinalModel["randomforest"]
+    # FeatureImportance = FMrf.feature_importances_.round(2)
+    # print(FeatureImportance)
+    # print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
+    TestSetSamples = TestSet.drop(OutPutLabel, axis=1)
+    TestSetLabels = TestSet[OutPutLabel].copy()
+    FinalPredictions = FinalModel.predict(TestSetSamples)
+    FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
+    print(FinalError)
+
 
 def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
 
@@ -247,8 +290,10 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
 
     # drop the output column
     TrainSet, TestSet = sklearn.model_selection.train_test_split(InputDataFrame, test_size=0.2, random_state=42)
-    DFsamples = TrainSet.drop(OutPutLabel, axis=1)
-    DFlabels = TrainSet[OutPutLabel].copy(True)
+    TrainSet : pandas.DataFrame
+    TestSet : pandas.DataFrame
+    DFsamples : pandas.DataFrame = TrainSet.drop(OutPutLabel, axis=1)
+    DFlabels : pandas.DataFrame = TrainSet[OutPutLabel].copy(True)
     # begin data cleaning
     # sklearn.preprocessing.MinMaxScaler(feature_range=(0, 1))
     ImputationStrategy : str = (CalculationType.enumMean).__str__().split('.')[1].lower().removeprefix('enum')
@@ -286,8 +331,6 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # print(DFsamplesFinal.describe().T)
     # print(pandas.concat([DFsamplesFinal, DFlabels], axis=1).corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
     # MLAlgorithms(DFsamplesFinal, DFlabels)
-
-
     # ParametersFormat = 
     # [
     #     {
@@ -299,45 +342,7 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     #         'parameter': ["""list of possible values"""],
     #     },
     # ]
-    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.randomforestregression)
-    # ParametersForRandomForest = [
-    #     {'PreProc__geo__n_clusters': [5, 8, 10],
-    #     'randomforest__max_features': [4, 6, 8]},
-    #     {'PreProc__geo__n_clusters': [10, 15],
-    #     'randomforest__max_features': [6, 8, 10]},
-    # ]
-    # GridSearch = ApplyGridSearchCV(FullPipeLine, Parameters, DFsamples, DFlabels)
-    # print('Best set of parameters are : \n', GridSearch.best_params_)
-    # print('Best Estimator : \n', GridSearch.best_estimator_)  # includes preprocessing
-    # DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
-    # DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    # DFGridSearchCV.head()
-    """
-    how to choose the sampling distribution for a hyperparameter
-
-    `scipy.stats.randint(a, b+1)`: for hyperparameters with _discrete_ values that range from a to b, and all values in that range seem equally likely.
-    `scipy.stats.uniform(a, b)`: this is very similar, but for _continuous_ hyperparameters.
-    `scipy.stats.geom(1 / scale)`: for discrete values, when you want to sample roughly in a given scale. E.g., with scale=1000 most samples will be in this ballpark, but ~10% of all samples will be <100 and ~10% will be >2300.
-    `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
-    `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
-    """
-    ParametersDistribution = {'PreProc__geo__n_clusters': randint(low=3, high=50), 'randomforest__max_features': randint(low=2, high=20)}
-    RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels)
-    # print('Best set of parameters are : \n', RandomSearchCV.best_params_)
-    # print('Best Estimator : \n', RandomSearchCV.best_estimator_)  # includes preprocessing
-    # DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
-    # DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
-    # DFRandomSearchCV.head()
-    FinalModel = RandomSearchCV.best_estimator_  # includes preprocessing
-    FeatureImportance = FinalModel["randomforest"].feature_importances_.round(2)
-    # print(FeatureImportance)
-    # print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
-    TestSetSamples = TestSet.drop(OutPutLabel, axis=1)
-    TestSetLabels = TestSet[OutPutLabel].copy()
-    FinalPredictions = FinalModel.predict(TestSetSamples)
-    FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
-    print(FinalError)
-
+    RandomForestGridSearchAndRandomizedSearchCVs(preprocessing, DFsamples, DFlabels, TestSet, OutPutLabel)
     ParametersForSVR = [
         {
             'svr__kernel': ['linear'], 
@@ -356,6 +361,28 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     DFGridSearchCV = pandas.DataFrame(GridSearch.cv_results_)
     DFGridSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
     DFGridSearchCV.head()
+
+    ParametersDistribution = {
+        'svr__kernel': ['linear', 'rbf'],
+        'svr__C': scipy.stats.loguniform(20, 200_000),
+        'svr__gamma': scipy.stats.expon(scale=1.0),
+    }
+    RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels, 50)
+    # print('Best set of parameters are : \n', RandomSearchCV.best_params_)
+    # print('Best Estimator : \n', RandomSearchCV.best_estimator_)  # includes preprocessing
+    # DFRandomSearchCV = pandas.DataFrame(RandomSearchCV.cv_results_)
+    # DFRandomSearchCV.sort_values(by="mean_test_score", ascending=False, inplace=True)
+    # DFRandomSearchCV.head()
+    FinalModel : sklearn.pipeline.Pipeline = RandomSearchCV.best_estimator_  # includes preprocessing
+    # FMrf : sklearn.ensemble.RandomForestRegressor = FinalModel["randomforest"]
+    # FeatureImportance = FMrf.feature_importances_.round(2)
+    # print(FeatureImportance)
+    # print(sorted(zip(FeatureImportance, FinalModel["PreProc"].get_feature_names_out()), reverse=True))
+    TestSetSamples = TestSet.drop(OutPutLabel, axis=1)
+    TestSetLabels = TestSet[OutPutLabel].copy()
+    FinalPredictions = FinalModel.predict(TestSetSamples)
+    FinalError = sklearn.metrics.root_mean_squared_error(TestSetLabels, FinalPredictions)
+    print(FinalError)
 
     return None
 
