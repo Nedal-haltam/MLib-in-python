@@ -1,32 +1,32 @@
+import urllib.request
+import matplotlib
 import matplotlib.pyplot
 import pandas
 import numpy
 import scipy.stats
 import sklearn
-import sklearn.cluster
+import pathlib
+import urllib
+import enum
+import joblib
+import scipy
 import sklearn.compose
+import sklearn.datasets
 import sklearn.ensemble
-import sklearn.feature_extraction
-import sklearn.feature_selection
 import sklearn.impute
 import sklearn.linear_model
 import sklearn.metrics
 import sklearn.model_selection
-from sklearn.neighbors import KNeighborsRegressor
-import pathlib
-import urllib.request
-import urllib.request
-import copy
-import enum
-from sklearn.compose import ColumnTransformer
 import sklearn.pipeline
 import sklearn.preprocessing
-import joblib
-from sklearn.experimental import enable_halving_search_cv
-from sklearn.model_selection import HalvingRandomSearchCV
-import scipy
 import sklearn.svm
+import sklearn.tree
 
+# TODO: utilize these
+# import sklearn.feature_extraction
+# import sklearn.feature_selection
+# from sklearn.experimental import enable_halving_search_cv
+# from sklearn.model_selection.cross_val_score HalvingRandomSearchCV
 
 class CalculationType(enum.Enum):
     enumMean = enum.auto()
@@ -37,6 +37,24 @@ class MLALGORITHMTYPE(enum.Enum):
     enumdecisiontreeregression = enum.auto()
     enumrandomforestregression = enum.auto()
     enumsvr = enum.auto()
+
+class ClusterSimilarity(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
+    def __init__(self, n_clusters=10, gamma=1.0, random_state=None):
+        self.n_clusters = n_clusters
+        self.gamma = gamma
+        self.random_state = random_state
+
+    def fit(self, X, y=None, sample_weight=None):
+        self.kmeans_ = sklearn.cluster.KMeans(self.n_clusters, n_init=10,
+                              random_state=self.random_state)
+        self.kmeans_.fit(X, sample_weight=sample_weight)
+        return self  # always return self!
+
+    def transform(self, X):
+        return sklearn.metrics.pairwise.rbf_kernel(X, self.kmeans_.cluster_centers_, gamma=self.gamma)
+    
+    def get_feature_names_out(self, names=None):
+        return [f"Cluster {i} similarity" for i in range(self.n_clusters)]
 
 RESOURCES_FOLDER_PATH : pathlib.Path = pathlib.Path() / "resources"
 CURRENT_OUTPUT_FOLDER_PATH : pathlib.Path = RESOURCES_FOLDER_PATH / "DefaultImagesFolder"
@@ -78,29 +96,6 @@ def RequestAndSaveCSVFromURL(URL, FolderPath : pathlib.Path, FileName : str) -> 
 def GetValuesFromDataFrameAsNumpyNdarray(DataFrame : pandas.DataFrame, Values : list) -> numpy.ndarray:
     return DataFrame[Values].to_numpy().reshape(-len(Values), len(Values))
 
-# def LifeSatExample() -> None:
-    data_root = "https://github.com/ageron/data/raw/main/"
-    DFLifeSat = pandas.read_csv(data_root + "lifesat/lifesat.csv")
-    DFLifeSat.set_index("Country", inplace=True)
-    DFLifeSat.sort_values(by='Country', inplace=True)
-    # print(DFLifeSat.head())
-    GDPLabel : str = "GDP per capita (USD)"
-    LifeSatLabel : str = "Life satisfaction"
-    # you can do it like this
-    """
-    array = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [GDPLabel, LifeSatLabel])
-    X = array[:, 0].reshape(-1, 1)
-    y = array[:, 1].reshape(-1, 1)
-    """
-    # or like this
-    X = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [GDPLabel])
-    y = GetValuesFromDataFrameAsNumpyNdarray(DFLifeSat, [LifeSatLabel])
-    # Visualize the data
-    DFLifeSat.plot(kind='scatter', grid=True, x=GDPLabel, y=LifeSatLabel)
-    matplotlib.pyplot.axis([23_500, 62_500, 4, 9])
-    matplotlib.pyplot.show()
-    return None
-
 def shuffle_and_split_data(InputDataFrame : pandas.DataFrame, test_ratio : int) -> pandas.DataFrame:
     shuffled_indices = numpy.random.permutation(len(InputDataFrame))
     test_set_size = int(len(InputDataFrame) * test_ratio)
@@ -117,23 +112,19 @@ def DisplayDataFrameInfo(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -
     Separator()
     InputDataFrame.info()
     Separator()
-    for col in InputDataFrame.columns:
-        if InputDataFrame[col].dtype == object:
-            # print("\t\t" , col)
-            print(InputDataFrame[col].value_counts())
+    [print(InputDataFrame[col].value_counts()) for col in InputDataFrame.select_dtypes(include='object').columns]
     Separator()    
     print(InputDataFrame.describe().T)
     Separator()
     print(InputDataFrame.isnull().sum())
     Separator()
     # see correlation with the output
-    CorrelationMatrix = InputDataFrame.corr(numeric_only=True)
-    CorrelationMatrix[OutPutLabel].sort_values(ascending=False)
+    print(InputDataFrame.corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
 
     return None
 
 def VisualizeDataFrame(InputDataFrame : pandas.DataFrame) -> None:
-    # done or modified later using other tools katkpt
+    # TODO: done or modified later using other tools katkpt
     InputDataFrame.hist(bins=50, figsize=(12, 8))
     SaveFig("histogram")
     pandas.plotting.scatter_matrix(InputDataFrame, figsize=(12, 8))
@@ -159,7 +150,7 @@ def DropingOutLiers_testtest():
     # DFlabels = DFlabels.iloc[outlier_pred == 1]
     return
 
-def GetFullPipeLine(PreProcessing : ColumnTransformer, MLAlgorithmType : MLALGORITHMTYPE) -> sklearn.pipeline.Pipeline:
+def GetFullPipeLine(PreProcessing : sklearn.compose.ColumnTransformer, MLAlgorithmType : MLALGORITHMTYPE) -> sklearn.pipeline.Pipeline:
     # TODO: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
     if MLAlgorithmType == MLALGORITHMTYPE.enumlinearregression:
         return sklearn.pipeline.Pipeline([
@@ -182,7 +173,7 @@ def GetFullPipeLine(PreProcessing : ColumnTransformer, MLAlgorithmType : MLALGOR
             ("svr", sklearn.svm.SVR()),
         ])        
 
-def MLAlgorithmsOnNormalCV(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, MLAlgorithmType : MLALGORITHMTYPE) -> None:
+def MLAlgorithmsOnNormalCV(PreProcessing : sklearn.compose.ColumnTransformer, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, MLAlgorithmType : MLALGORITHMTYPE) -> None:
     cv = 3
     FullPipeLine = GetFullPipeLine(PreProcessing, MLAlgorithmType)
     FullPipeLine.fit(DataFrameSamples, DataFrameLabels)
@@ -193,58 +184,25 @@ def MLAlgorithmsOnNormalCV(PreProcessing : ColumnTransformer, DataFrameSamples :
     print("Cross Validation statistics:\n", pandas.Series(CVresult).describe())
     return None
 
-class ClusterSimilarity(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
-    def __init__(self, n_clusters=10, gamma=1.0, random_state=None):
-        self.n_clusters = n_clusters
-        self.gamma = gamma
-        self.random_state = random_state
-
-    def fit(self, X, y=None, sample_weight=None):
-        self.kmeans_ = sklearn.cluster.KMeans(self.n_clusters, n_init=10,
-                              random_state=self.random_state)
-        self.kmeans_.fit(X, sample_weight=sample_weight)
-        return self  # always return self!
-
-    def transform(self, X):
-        return sklearn.metrics.pairwise.rbf_kernel(X, self.kmeans_.cluster_centers_, gamma=self.gamma)
-    
-    def get_feature_names_out(self, names=None):
-        return [f"Cluster {i} similarity" for i in range(self.n_clusters)]
-
-def ApplyColumnTransformerOnDataFrame(PreProcessing : ColumnTransformer, DataFrameSamples : pandas.DataFrame) -> pandas.DataFrame:
+def ApplyColumnTransformerOnDataFrame(PreProcessing : sklearn.compose.ColumnTransformer, DataFrameSamples : pandas.DataFrame) -> pandas.DataFrame:
     ProcessedSamples = PreProcessing.fit_transform(DataFrameSamples)
     return pandas.DataFrame(ProcessedSamples, columns=PreProcessing.get_feature_names_out(), index=DataFrameSamples.index)
 
-def ApplyGridSearchCV(PipeLine, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, CVFolds : int) -> sklearn.model_selection.GridSearchCV:
-    GridSearch = sklearn.model_selection.GridSearchCV(PipeLine, Parameters, cv=CVFolds, scoring='neg_root_mean_squared_error')
+def ApplyGridSearchCV(PipeLine, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, CVFolds : int) -> sklearn.model_selection.cross_val_score:
+    GridSearch = sklearn.model_selection.cross_val_score(PipeLine, Parameters, cv=CVFolds, scoring='neg_root_mean_squared_error')
     return GridSearch.fit(DataFrameSamples, DataFrameLabels)
 
-def ApplyRandomSearchCV(PipeLine, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int, CVFolds : int) -> sklearn.model_selection.RandomizedSearchCV:
-    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=CVFolds, scoring='neg_root_mean_squared_error', random_state=42)
+def ApplyRandomSearchCV(PipeLine, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int, CVFolds : int) -> sklearn.model_selection.cross_val_score:
+    RandomSearchCV = sklearn.model_selection.cross_val_score(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=CVFolds, scoring='neg_root_mean_squared_error', random_state=42)
     return RandomSearchCV.fit(DataFrameSamples, DataFrameLabels)
 
-def RandomForestGridSearchAndRandomizedSearchCVs(preprocessing : ColumnTransformer, DFsamples : pandas.DataFrame, DFlabels : pandas.DataFrame, TestSet : pandas.DataFrame, OutPutLabel : str):
-    # FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumrandomforestregression)
-    # ParametersForRandomForest = [
-    #     {'PreProc__geo__n_clusters': [5, 8, 10],
-    #     'randomforest__max_features': [4, 6, 8]},
-    #     {'PreProc__geo__n_clusters': [10, 15],
-    #     'randomforest__max_features': [6, 8, 10]},
-    # ]
-    # GridSearchCV = ApplyGridSearchCV(FullPipeLine, ParametersForRandomForest, DFsamples, DFlabels)
-    # DisplayCVInformation(GridSearchCV)
+def GridRandom_SearchCV(preprocessing : sklearn.compose.ColumnTransformer, Parameters, ParametersDistribution, Iterations, CVFolds, MLAlgorithmType : MLALGORITHMTYPE, DFsamples : pandas.DataFrame, DFlabels : pandas.DataFrame, TestSet : pandas.DataFrame, OutPutLabel : str):
+    FullPipeLine = GetFullPipeLine(preprocessing, MLAlgorithmType)
+    GridSearchCV = ApplyGridSearchCV(FullPipeLine, Parameters, DFsamples, DFlabels, CVFolds)
+    DisplayCVInformation(GridSearchCV)
     #########################################################################################################################################################
-    """
-    how to choose the sampling distribution for a hyperparameter
-    `scipy.stats.randint(a, b+1)`: for hyperparameters with _discrete_ values that range from a to b, and all values in that range seem equally likely.
-    `scipy.stats.uniform(a, b)`: this is very similar, but for _continuous_ hyperparameters.
-    `scipy.stats.geom(1 / scale)`: for discrete values, when you want to sample roughly in a given scale. E.g., with scale=1000 most samples will be in this ballpark, but ~10% of all samples will be <100 and ~10% will be >2300.
-    `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
-    `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
-    """
-    # ParametersDistribution = {'PreProc__geo__n_clusters': scipy.stats.randint(low=3, high=50), 'randomforest__max_features': scipy.stats.randint(low=2, high=20)}
-    # RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels, 1, 1)
-    # DisplayCVInformation(RandomSearchCV)
+    RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistribution, DFsamples, DFlabels, Iterations ,CVFolds)
+    DisplayCVInformation(RandomSearchCV)
     #########################################################################################################################################################
     # Test_BestEstimator_On_A_Set((CrossValidationObject).best_estimator_)
     # FMrf : sklearn.ensemble.RandomForestRegressor = FinalModel["randomforest"]
@@ -269,14 +227,14 @@ def DisplayCVInformation(CrossValidator):
     print(SVR_DFRandomSearchCV.head())
 
 
-def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
+def HousingExample(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
 
     # see the following two lines before and after constructing some new features through combining current ones
     # CorrelationMatrix = InputDataFrame.corr(numeric_only=True)
     # CorrelationMatrix[OutPutLabel].sort_values(ascending=False)
 
     # drop the output column
-    TrainSet, TestSet = sklearn.model_selection.train_test_split(InputDataFrame, test_size=0.2, random_state=42)
+    TrainSet, TestSet = sklearn.model_selection.cross_val_score(InputDataFrame, test_size=0.2, random_state=42)
     TrainSet : pandas.DataFrame
     TrainSetsamples : pandas.DataFrame = TrainSet.drop(OutPutLabel, axis=1)
     TrainSetlabels : pandas.DataFrame = TrainSet[OutPutLabel].copy(True)
@@ -310,53 +268,62 @@ def PreProcessDataFrame(InputDataFrame : pandas.DataFrame, OutPutLabel : str) ->
     # DropingOutLiers_testtest()
     # keep in mind that you should try all pipelines on all columns to you can shoose the best features that correlates with the output
     LogColumns = ["total_bedrooms", "total_rooms", "population", "households", "median_income"]
+    """
+    how to choose the sampling distribution for a hyperparameter
+    `scipy.stats.randint(a, b+1)`: for hyperparameters with _discrete_ values that range from a to b, and all values in that range seem equally likely.
+    `scipy.stats.uniform(a, b)`: this is very similar, but for _continuous_ hyperparameters.
+    `scipy.stats.geom(1 / scale)`: for discrete values, when you want to sample roughly in a given scale. E.g., with scale=1000 most samples will be in this ballpark, but ~10% of all samples will be <100 and ~10% will be >2300.
+    `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
+    `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
+    """
     # TODO: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
-    preprocessing = ColumnTransformer([
+    preprocessing = sklearn.compose.ColumnTransformer([
         ("log", log_pipeline, LogColumns),
         ("geo", ClusterSimilarity_pipeline, ['longitude', 'latitude']),
         ("cat", cat_pipeline, CatigoricalSelector),
     ], remainder=num_pipeline)
-    # RandomForestGridSearchAndRandomizedSearchCVs(preprocessing, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
     # a paramter is a list of dicts each consists of bunch of these ('parameter': ["""list of possible values"""], `the other one`)
-    # ParametersForSVR = [
-    #     {
-    #         'svr__kernel': ['linear'], 
-    #         'svr__C': [10., 30., 100., 300., 1000., 3000., 10000., 30000.0],
-    #     },
-    #     {
-    #         'svr__kernel': ['rbf'], 
-    #         'svr__C': [1.0, 3.0, 10., 30., 100., 300., 1000.0], 
-    #         'svr__gamma': [0.01, 0.03, 0.1, 0.3, 1.0, 3.0],
-    #     },
-    # ]
-    # GridSearch = ApplyGridSearchCV(FullPipeLine, ParametersForSVR, TrainSetsamples, TrainSetlabels)
+    ParametersDistributionForRandomForest = {'PreProc__geo__n_clusters': scipy.stats.randint(low=3, high=50), 'randomforest__max_features': scipy.stats.randint(low=2, high=20)}
+    ParametersForRandomForest = [
+        {'PreProc__geo__n_clusters': [5, 8, 10],
+        'randomforest__max_features': [4, 6, 8]},
+        {'PreProc__geo__n_clusters': [10, 15],
+        'randomforest__max_features': [6, 8, 10]},
+    ]
+    GridRandom_SearchCV(preprocessing, ParametersForRandomForest, ParametersDistributionForRandomForest, 3, 2, MLALGORITHMTYPE.enumrandomforestregression, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
 
-    FullPipeLine = GetFullPipeLine(preprocessing, MLALGORITHMTYPE.enumsvr)
+    ParametersForSVR = [
+        {
+            'svr__kernel': ['linear'], 
+            'svr__C': [10., 30., 100., 300., 1000., 3000., 10000., 30000.0],
+        },
+        {
+            'svr__kernel': ['rbf'], 
+            'svr__C': [1.0, 3.0, 10., 30., 100., 300., 1000.0], 
+            'svr__gamma': [0.01, 0.03, 0.1, 0.3, 1.0, 3.0],
+        },
+    ]
     ParametersDistributionForSVR = {
         'svr__kernel': ['linear', 'rbf'],
         'svr__C': scipy.stats.loguniform(20, 200_000),
         'svr__gamma': scipy.stats.expon(scale=1.0),
     }
-    SVR_RandomSearchCV = ApplyRandomSearchCV(FullPipeLine, ParametersDistributionForSVR, TrainSetsamples, TrainSetlabels, 15, 2)
+    GridRandom_SearchCV(preprocessing, ParametersForSVR, ParametersDistributionForSVR, 3, 2, MLALGORITHMTYPE.enumsvr, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
+    # TODO: selctor pipeline
     # you can do a grid/random search on the `threshold` parameter for example and so on...
-    SelectorPipeLine = sklearn.pipeline.Pipeline([
-        ('preprocessing', preprocessing),
-        ('selector', sklearn.feature_selection.SelectFromModel(sklearn.ensemble.RandomForestRegressor(random_state=42), threshold=0.005)),  # min feature importance
-        ('svr', sklearn.svm.SVR(C=SVR_RandomSearchCV.best_params_["svr__C"], gamma=SVR_RandomSearchCV.best_params_["svr__gamma"], kernel=SVR_RandomSearchCV.best_params_["svr__kernel"])),
-    ])
+    # SelectorPipeLine = sklearn.pipeline.Pipeline([
+    #     ('preprocessing', preprocessing),
+    #     ('selector', sklearn.feature_selection.SelectFromModel(sklearn.ensemble.RandomForestRegressor(random_state=42), threshold=0.005)),  # min feature importance
+    #     ('svr', sklearn.svm.SVR(C=SVR_RandomSearchCV.best_params_["svr__C"], gamma=SVR_RandomSearchCV.best_params_["svr__gamma"], kernel=SVR_RandomSearchCV.best_params_["svr__kernel"])),
+    # ])
     return None
 
+def MnistExample(mnist):
+    Samples, Labels = mnist.data, mnist.target
+    TrainSetsamples, TrainSetsamples, TrainSetlabels, TestSetlabels = Samples[:60000], Samples[60000:], Labels[:60000], Labels[60000:]
+    return None
 
 InitPlot(RESOURCES_FOLDER_PATH / "images")
-PreProcessDataFrame(CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv"), "median_house_value")
-
-# LifeSatExample()
-# model = LinearRegression()
-# model.fit(X, y)
-# X_new = [[37_655.2]]  # Cyprus' GDP per capita in 2020
-# print(model.predict(X_new)) # outputs [[6.30165767]]
-
-# model = KNeighborsRegressor(n_neighbors=3)
-# model.fit(X, y)
-# # Make a prediction for Cyprus
-# print(model.predict(X_new)) # outputs [[6.33333333]]
+# HousingExample(CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv"), "median_house_value")
+mnist = sklearn.datasets.fetch_openml('mnist_784', as_frame=False)
+MnistExample(mnist)
