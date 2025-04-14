@@ -27,7 +27,7 @@ import sklearn.tree
 # import sklearn.feature_selection
 # from sklearn.experimental import enable_halving_search_cv
 # from sklearn.model_selection.cross_val_score HalvingRandomSearchCV
-
+# TODO: investigate in the different parameters of the functions we use in the function calls
 class CalculationType(enum.Enum):
     enumMean = enum.auto()
     enumMedian = enum.auto()
@@ -141,6 +141,7 @@ def DumpModelInFile(Model, FilePath : pathlib.Path):
 def LoadModelFromFile(FilePath : pathlib.Path):
     return joblib.load(FilePath)
 
+# TODO: remove outliers if there is (if applicable)
 def DropingOutLiers_testtest():
     # droping outliers
     # from sklearn.ensemble import IsolationForest
@@ -188,12 +189,12 @@ def ApplyColumnTransformerOnDataFrame(PreProcessing : sklearn.compose.ColumnTran
     ProcessedSamples = PreProcessing.fit_transform(DataFrameSamples)
     return pandas.DataFrame(ProcessedSamples, columns=PreProcessing.get_feature_names_out(), index=DataFrameSamples.index)
 
-def ApplyGridSearchCV(PipeLine, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, CVFolds : int) -> sklearn.model_selection.cross_val_score:
-    GridSearch = sklearn.model_selection.cross_val_score(PipeLine, Parameters, cv=CVFolds, scoring='neg_root_mean_squared_error')
+def ApplyGridSearchCV(PipeLine, Parameters, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, CVFolds : int) -> sklearn.model_selection.GridSearchCV:
+    GridSearch = sklearn.model_selection.GridSearchCV(PipeLine, Parameters, cv=CVFolds, scoring='neg_root_mean_squared_error')
     return GridSearch.fit(DataFrameSamples, DataFrameLabels)
 
-def ApplyRandomSearchCV(PipeLine, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int, CVFolds : int) -> sklearn.model_selection.cross_val_score:
-    RandomSearchCV = sklearn.model_selection.cross_val_score(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=CVFolds, scoring='neg_root_mean_squared_error', random_state=42)
+def ApplyRandomSearchCV(PipeLine, ParametersDistribution, DataFrameSamples : pandas.DataFrame, DataFrameLabels : pandas.DataFrame, Iterations : int, CVFolds : int) -> sklearn.model_selection.RandomizedSearchCV:
+    RandomSearchCV = sklearn.model_selection.RandomizedSearchCV(PipeLine, param_distributions=ParametersDistribution, n_iter=Iterations, cv=CVFolds, scoring='neg_root_mean_squared_error', random_state=42)
     return RandomSearchCV.fit(DataFrameSamples, DataFrameLabels)
 
 def GridRandom_SearchCV(preprocessing : sklearn.compose.ColumnTransformer, Parameters, ParametersDistribution, Iterations, CVFolds, MLAlgorithmType : MLALGORITHMTYPE, DFsamples : pandas.DataFrame, DFlabels : pandas.DataFrame, TestSet : pandas.DataFrame, OutPutLabel : str):
@@ -227,14 +228,14 @@ def DisplayCVInformation(CrossValidator):
     print(SVR_DFRandomSearchCV.head())
 
 
-def HousingExample(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
+def HousingExampleRegression(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None:
 
     # see the following two lines before and after constructing some new features through combining current ones
     # CorrelationMatrix = InputDataFrame.corr(numeric_only=True)
     # CorrelationMatrix[OutPutLabel].sort_values(ascending=False)
 
     # drop the output column
-    TrainSet, TestSet = sklearn.model_selection.cross_val_score(InputDataFrame, test_size=0.2, random_state=42)
+    TrainSet, TestSet = sklearn.model_selection.train_test_split(InputDataFrame, test_size=0.2, random_state=42)
     TrainSet : pandas.DataFrame
     TrainSetsamples : pandas.DataFrame = TrainSet.drop(OutPutLabel, axis=1)
     TrainSetlabels : pandas.DataFrame = TrainSet[OutPutLabel].copy(True)
@@ -265,7 +266,6 @@ def HousingExample(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None
     #     ('clustering', ClusterSimilarity(n_clusters=10, gamma=1., random_state=42))
     # ])
     ClusterSimilarity_pipeline = ClusterSimilarity(n_clusters=10, gamma=1., random_state=42)
-    # DropingOutLiers_testtest()
     # keep in mind that you should try all pipelines on all columns to you can shoose the best features that correlates with the output
     LogColumns = ["total_bedrooms", "total_rooms", "population", "households", "median_income"]
     """
@@ -291,7 +291,7 @@ def HousingExample(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None
         'randomforest__max_features': [6, 8, 10]},
     ]
     GridRandom_SearchCV(preprocessing, ParametersForRandomForest, ParametersDistributionForRandomForest, 3, 2, MLALGORITHMTYPE.enumrandomforestregression, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
-
+    exit()
     ParametersForSVR = [
         {
             'svr__kernel': ['linear'], 
@@ -318,12 +318,38 @@ def HousingExample(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -> None
     # ])
     return None
 
-def MnistExample(mnist):
+def MnistExampleClassification(mnist):
     Samples, Labels = mnist.data, mnist.target
-    TrainSetsamples, TrainSetsamples, TrainSetlabels, TestSetlabels = Samples[:60000], Samples[60000:], Labels[:60000], Labels[60000:]
+    SIZE = len(Samples)
+    TestRatio = 0.7
+    TestSize : int = int(TestRatio * SIZE)
+    TrainSize : int = int(SIZE - TestSize)
+    TrainSetsamples, TestSetsamples, TrainSetlabels, TestSetlabels = Samples[:TrainSize], Samples[TestSize:], Labels[:TrainSize], Labels[TestSize:]
+
+    SGDClassifier = sklearn.linear_model.SGDClassifier(random_state=42)
+    SGDClassifier.fit(TrainSetsamples, TrainSetlabels)
+
+    # print('begin calculating cross_val_score')
+    # accuracies = sklearn.model_selection.cross_val_score(SGDClassifier, TrainSetsamples, TrainSetlabels, cv=3, scoring='accuracy')
+    # print(f'cross_val_score : \n{accuracies}')
+
+    predictions = sklearn.model_selection.cross_val_predict(SGDClassifier, TrainSetsamples, TrainSetlabels, cv=2)
+    ConfusionMatrix = sklearn.metrics.confusion_matrix(TrainSetlabels, predictions)
+    print(ConfusionMatrix)
+    Separator()
+    PrecisionScore = sklearn.metrics.precision_score(TrainSetlabels, predictions) # ConfusionMatrix[1, 1] / (ConfusionMatrix[0, 1] + ConfusionMatrix[1, 1])
+    print(PrecisionScore)
+    Separator()
+    RecallScore = sklearn.metrics.recall_score(TrainSetlabels, predictions) # ConfusionMatrix[1, 1] / (ConfusionMatrix[1, 0] + ConfusionMatrix[1, 1])
+    print(RecallScore)
+    Separator()
+    F1Score = sklearn.metrics.f1_score(TrainSetlabels, predictions) # ConfusionMatrix[1, 1] / (ConfusionMatrix[1, 1] + (ConfusionMatrix[1, 0] + ConfusionMatrix[0, 1]) / 2)
+    print(F1Score)
+    Separator()
+    
     return None
 
 InitPlot(RESOURCES_FOLDER_PATH / "images")
-# HousingExample(CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv"), "median_house_value")
+# HousingExampleRegression(CSV2DataFrame(RESOURCES_FOLDER_PATH / "ds" / "housing.csv"), "median_house_value")
 mnist = sklearn.datasets.fetch_openml('mnist_784', as_frame=False)
-MnistExample(mnist)
+MnistExampleClassification(mnist)
