@@ -119,7 +119,8 @@ def DisplayDataFrameInfo(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -
     print(InputDataFrame.isnull().sum())
     Separator()
     # see correlation with the output
-    print(InputDataFrame.corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
+    if OutPutLabel in InputDataFrame.columns:
+        print(InputDataFrame.corr(numeric_only=True)[OutPutLabel].sort_values(ascending=False))
 
     return None
 
@@ -181,7 +182,7 @@ def MLAlgorithmsOnNormalCV(PreProcessing : sklearn.compose.ColumnTransformer, Da
     DFsamplesPredictions = FullPipeLine.predict(DataFrameSamples)
     error = sklearn.metrics.root_mean_squared_error(DataFrameLabels, DFsamplesPredictions)
     print(f"Training Error of `{MLAlgorithmType.__str__().split('.')[1].lower().removeprefix('enum')}` : ", error)
-    CVresult = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring="neg_root_mean_squared_error", cv=cv)
+    CVresult = -sklearn.model_selection.cross_val_score(FullPipeLine, DataFrameSamples, DataFrameLabels, scoring='neg_root_mean_squared_error', cv=cv)
     print("Cross Validation statistics:\n", pandas.Series(CVresult).describe())
     return None
 
@@ -318,34 +319,45 @@ def HousingExampleRegression(InputDataFrame : pandas.DataFrame, OutPutLabel : st
     # ])
     return None
 
+def ClassificationPerformanceMeasures(Setlabels, Predictions, Average : str):
+    """
+    average='micro': Calculates metrics globally by counting the total true positives, false negatives, and false positives.
+
+    average='macro': Calculates metrics for each label, and finds their unweighted mean (treats all classes equally).
+
+    average='weighted': Like macro, but accounts for class imbalance by weighting each class by its support (the number of true instances).
+    """
+    ConfusionMatrix = sklearn.metrics.confusion_matrix(Setlabels, Predictions)
+    print(ConfusionMatrix)
+    Separator()
+    PrecisionScore = sklearn.metrics.precision_score(Setlabels, Predictions, average=Average) # ConfusionMatrix[1, 1] / (ConfusionMatrix[0, 1] + ConfusionMatrix[1, 1])
+    print(PrecisionScore)
+    Separator()
+    RecallScore = sklearn.metrics.recall_score(Setlabels, Predictions, average=Average) # ConfusionMatrix[1, 1] / (ConfusionMatrix[1, 0] + ConfusionMatrix[1, 1])
+    print(RecallScore)
+    Separator()
+    F1Score = sklearn.metrics.f1_score(Setlabels, Predictions, average=Average) # ConfusionMatrix[1, 1] / (ConfusionMatrix[1, 1] + (ConfusionMatrix[1, 0] + ConfusionMatrix[0, 1]) / 2)
+    print(F1Score)
+    Separator()
+
+
 def MnistExampleClassification(mnist):
     Samples, Labels = mnist.data, mnist.target
     SIZE = len(Samples)
-    TestRatio = 0.7
+    TestRatio = 0.8
     TestSize : int = int(TestRatio * SIZE)
     TrainSize : int = int(SIZE - TestSize)
     TrainSetsamples, TestSetsamples, TrainSetlabels, TestSetlabels = Samples[:TrainSize], Samples[TestSize:], Labels[:TrainSize], Labels[TestSize:]
 
     SGDClassifier = sklearn.linear_model.SGDClassifier(random_state=42)
-    SGDClassifier.fit(TrainSetsamples, TrainSetlabels)
 
-    # print('begin calculating cross_val_score')
-    # accuracies = sklearn.model_selection.cross_val_score(SGDClassifier, TrainSetsamples, TrainSetlabels, cv=3, scoring='accuracy')
+    # accuracies = sklearn.model_selection.cross_val_score(SGDClassifier, TrainSetsamples, TrainSetlabels, cv=2, scoring='accuracy')
     # print(f'cross_val_score : \n{accuracies}')
 
-    predictions = sklearn.model_selection.cross_val_predict(SGDClassifier, TrainSetsamples, TrainSetlabels, cv=2)
-    ConfusionMatrix = sklearn.metrics.confusion_matrix(TrainSetlabels, predictions)
-    print(ConfusionMatrix)
-    Separator()
-    PrecisionScore = sklearn.metrics.precision_score(TrainSetlabels, predictions) # ConfusionMatrix[1, 1] / (ConfusionMatrix[0, 1] + ConfusionMatrix[1, 1])
-    print(PrecisionScore)
-    Separator()
-    RecallScore = sklearn.metrics.recall_score(TrainSetlabels, predictions) # ConfusionMatrix[1, 1] / (ConfusionMatrix[1, 0] + ConfusionMatrix[1, 1])
-    print(RecallScore)
-    Separator()
-    F1Score = sklearn.metrics.f1_score(TrainSetlabels, predictions) # ConfusionMatrix[1, 1] / (ConfusionMatrix[1, 1] + (ConfusionMatrix[1, 0] + ConfusionMatrix[0, 1]) / 2)
-    print(F1Score)
-    Separator()
+    Predictions = sklearn.model_selection.cross_val_predict(SGDClassifier, TrainSetsamples, TrainSetlabels, cv=2)
+    print(f'cross_val_predict : \n{Predictions}')
+
+    ClassificationPerformanceMeasures(TrainSetlabels, Predictions, 'macro')
     
     return None
 
