@@ -22,12 +22,6 @@ import sklearn.preprocessing
 import sklearn.svm
 import sklearn.tree
 
-# TODO: utilize these
-# import sklearn.feature_extraction
-# import sklearn.feature_selection
-# from sklearn.experimental import enable_halving_search_cv
-# from sklearn.model_selection.cross_val_score HalvingRandomSearchCV
-# TODO: investigate in the different parameters of the functions we use in the function calls
 class CalculationType(enum.Enum):
     enumMean = enum.auto()
     enumMedian = enum.auto()
@@ -125,7 +119,7 @@ def DisplayDataFrameInfo(InputDataFrame : pandas.DataFrame, OutPutLabel : str) -
     return None
 
 def VisualizeDataFrame(InputDataFrame : pandas.DataFrame) -> None:
-    # TODO: done or modified later using other tools katkpt
+    # T O D O: done or modified later using other tools katkpt
     InputDataFrame.hist(bins=50, figsize=(12, 8))
     SaveFig("histogram")
     pandas.plotting.scatter_matrix(InputDataFrame, figsize=(12, 8))
@@ -142,7 +136,7 @@ def DumpModelInFile(Model, FilePath : pathlib.Path):
 def LoadModelFromFile(FilePath : pathlib.Path):
     return joblib.load(FilePath)
 
-# TODO: remove outliers if there is (if applicable)
+# T O D O: remove outliers if there is (if applicable)
 def DropingOutLiers_testtest():
     # droping outliers
     # from sklearn.ensemble import IsolationForest
@@ -153,7 +147,7 @@ def DropingOutLiers_testtest():
     return
 
 def GetFullPipeLine(PreProcessing : sklearn.compose.ColumnTransformer, MLAlgorithmType : MLALGORITHMTYPE) -> sklearn.pipeline.Pipeline:
-    # TODO: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
+    # T O D O: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
     if MLAlgorithmType == MLALGORITHMTYPE.enumlinearregression:
         return sklearn.pipeline.Pipeline([
             ("PreProc", PreProcessing),
@@ -277,7 +271,7 @@ def HousingExampleRegression(InputDataFrame : pandas.DataFrame, OutPutLabel : st
     `scipy.stats.expon(scale)`: this is the continuous equivalent of `geom`. Just set `scale` to the most likely value.
     `scipy.stats.loguniform(a, b)`: when you have almost no idea what the optimal hyperparameter value's scale is. If you set a=0.01 and b=100, then you're just as likely to sample a value between 0.01 and 0.1 as a value between 10 and 100.
     """
-    # TODO: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
+    # T O D O: refactor the names of the pipeline stages here into standalone variables so we can use them in other places without mistakes
     preprocessing = sklearn.compose.ColumnTransformer([
         ("log", log_pipeline, LogColumns),
         ("geo", ClusterSimilarity_pipeline, ['longitude', 'latitude']),
@@ -310,7 +304,7 @@ def HousingExampleRegression(InputDataFrame : pandas.DataFrame, OutPutLabel : st
         'svr__gamma': scipy.stats.expon(scale=1.0),
     }
     GridRandom_SearchCV(preprocessing, ParametersForSVR, ParametersDistributionForSVR, 3, 2, MLALGORITHMTYPE.enumsvr, TrainSetsamples, TrainSetlabels, TestSet, OutPutLabel)
-    # TODO: selctor pipeline
+    # T O D O: selctor pipeline
     # you can do a grid/random search on the `threshold` parameter for example and so on...
     # SelectorPipeLine = sklearn.pipeline.Pipeline([
     #     ('preprocessing', preprocessing),
